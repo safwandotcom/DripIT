@@ -122,20 +122,30 @@ async def _process_publish(
         )
         caption = _build_caption(deal, bdt_price)
         await publisher_bot.publish_photo(settings.telegram_chat_id, image_bytes, caption)
-
-        if deal.get("pending_action") == "createorder":
-            order_number = await sheets.next_order_number(settings.deal_brand)
-            await sheets.append_order(_build_order_row(deal, bdt_price, order_number, settings.deal_brand))
-
-        await sheets.update_pending_deal(deal_id, status="published")
-    except (ImageRenderError, bots.TelegramError, SheetsError) as exc:
-        logger.exception("Failed to publish deal %s", deal_id)
+    except (ImageRenderError, bots.TelegramError) as exc:
+        logger.exception("Failed to render/publish banner for deal %s", deal_id)
         try:
             await sheets.update_pending_deal(deal_id, status="awaiting_price")
         except SheetsError:
             logger.exception("Failed to revert status for deal %s", deal_id)
         await reviewer_bot.send_message(
             reviewer_chat_id, f"⚠️ Failed to publish: {exc}. Reply again to retry."
+        )
+        return
+
+    # The banner is now live publicly — never revert-and-retry past this point;
+    # a retry would re-render and re-post it. Failures below are reported as a
+    # partial-success message instead of an invitation to retry.
+    try:
+        await sheets.update_pending_deal(deal_id, status="published")
+        if deal.get("pending_action") == "createorder":
+            order_number = await sheets.next_order_number(settings.deal_brand)
+            await sheets.append_order(_build_order_row(deal, bdt_price, order_number, settings.deal_brand))
+    except SheetsError as exc:
+        logger.exception("Banner published but bookkeeping failed for deal %s", deal_id)
+        await reviewer_bot.send_message(
+            reviewer_chat_id,
+            f"⚠️ Banner published, but recording it in DripIT failed: {exc}. Please add this order manually.",
         )
 
 

@@ -138,6 +138,38 @@ def test_publish_failure_reverts_status_and_notifies_reviewer():
 
 
 @respx.mock
+def test_order_creation_failure_after_publish_does_not_revert_or_duplicate():
+    _mock_pending_deal("d5", pending_action="createorder")
+    respx.get("https://x/i.jpg").mock(return_value=httpx.Response(200, content=_sample_png_bytes()))
+    respx.get(SHEETS_URL, params={"action": "list", "entity": "counters"}).mock(
+        return_value=httpx.Response(500)
+    )
+    save_route = respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    reviewer_msg_route = respx.post("https://api.telegram.org/bottest-reviewer-token/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+    publish_route = respx.post("https://api.telegram.org/bottest-publisher-token/sendPhoto").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    resp = client.post(
+        "/webhook/telegram-reviewer", headers=SECRET_HEADERS, json=_price_reply_payload("d5", "8000")
+    )
+
+    assert resp.status_code == 200
+    assert publish_route.called  # the banner WAS posted publicly
+
+    saved_calls = [json.loads(c.request.content) for c in save_route.calls]
+    final_status = [c["data"]["status"] for c in saved_calls if c["entity"] == "pendingDeals"][-1]
+    assert final_status == "published"  # never reverted -- would invite a duplicate re-publish
+    assert not any(c["entity"] == "orders" for c in saved_calls)  # order was never created
+
+    last_msg = json.loads(reviewer_msg_route.calls.last.request.content)
+    assert "manually" in last_msg["text"].lower()
+    assert "reply again to retry" not in last_msg["text"].lower()
+
+
+@respx.mock
 def test_non_reply_message_is_ignored():
     resp = client.post(
         "/webhook/telegram-reviewer",
