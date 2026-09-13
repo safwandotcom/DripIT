@@ -66,7 +66,6 @@ E:\preorder-app/
 │   ├── image_engine.py        Pillow banner renderer (async-safe)
 │   ├── models.py              Pydantic schemas
 │   ├── config.py              Env var loading + startup validation
-│   ├── fonts/                 Bundled open-license TTF (not system Arial)
 │   ├── requirements.txt
 │   └── Procfile
 └── docs/superpowers/specs/…  this file
@@ -206,7 +205,7 @@ addressed by this design:
 | In-memory `PENDING_DEALS` wiped on Render restart | `PendingDeals` Sheet tab (Section 6) |
 | No idempotency — double-tap or Telegram retry could double-publish | `status` claimed (`processing`) before any side effect runs; duplicate replies see "already processed" |
 | `requests.get()` blocks the async event loop | `image_engine.py` uses `httpx.AsyncClient` |
-| `arial.ttf` doesn't exist on Render's Linux container → silently falls back to a tiny bitmap font | Real TTF (e.g. Inter) bundled in `server/fonts/`, loaded by relative path |
+| `arial.ttf` doesn't exist on Render's Linux container → silently falls back to a tiny, illegible bitmap font | `ImageFont.load_default(size=N)` — Pillow ≥10.1.0 ships its own bundled scalable font, no external TTF or licensing to manage, verified to render legibly at banner scale (Section 6 note) |
 | No error handling around Telegram/Sheets calls | Every call wrapped; failures logged and, mid-flow, reported to the reviewer as plain text |
 | No webhook auth | Section 7 |
 | `PENDING_DEALS` never cleaned up on success | Row status moves to `published`; nothing to clean up (it's just a Sheet row now) |
