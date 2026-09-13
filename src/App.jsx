@@ -4971,13 +4971,14 @@ function ExportView({ orders, expenses, ledger, loans, invoices, showToast, comp
 const SHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
 
 const HEADERS = {
-  orders:   ['id','orderNumber','customerName','customerPhone','customerFb','productName','productDescription','costPriceRM','conversionRate','multiplier','status','orderDate','advancePaid','deliveryDate','notes'],
+  orders:   ['id','company','orderNumber','customerName','customerPhone','customerFb','productName','productDescription','costPriceRM','conversionRate','multiplier','status','orderDate','advancePaid','deliveryDate','notes'],
   expenses: ['id','date','description','category','amount','currency'],
   ledger:   ['id','date','direction','type','account','party','amount','currency','description','kind','relatedOrderId'],
   loans:    ['id','type','party','principal','currency','amountRepaid','status','date','dueDate','notes'],
   invoices: ['id','invoiceNumber','date','subtotal','discount','total'],
   accounts: ['id','name','type','currency','openingBalance'],
   counters: ['id','orderSeq','invoiceSeq','receiptSeq'],
+  pendingDeals: ['id','title','myr_price','sizes','image_url','status','pending_action','created_at'],
 };
 
 function getSheet(entity) {
