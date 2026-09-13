@@ -12,3 +12,9 @@ dist-ssr
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Python (server/)
+__pycache__/
+*.pyc
+.pytest_cache/
+server/.venv
