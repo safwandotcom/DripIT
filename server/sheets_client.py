@@ -66,10 +66,20 @@ class SheetsClient:
         await self.save_row("orders", order)
 
     async def next_order_number(self, brand: str) -> str:
-        rows = await self.list_rows("counters")
-        row = next((r for r in rows if str(r.get("id")) == brand), None)
-        current_seq = int(row["orderSeq"]) if row and row.get("orderSeq") else 0
-        next_seq = current_seq + 1
-        await self.save_row("counters", {**(row or {"id": brand}), "orderSeq": next_seq})
+        """Mirrors DripIT's own in-app numbering (computeNextNumber in
+        src/App.jsx): scan existing orders for the highest `<prefix>-####`
+        already used, and take the next one, zero-padded to 4 digits — rather
+        than trusting the Sheet's `counters` tab, which the React app has never
+        actually kept in sync with an `orderSeq` field.
+        """
         prefix = "NV" if brand == "NOVUS" else "DI"
-        return f"{prefix}-{next_seq}"
+        needle = f"{prefix}-"
+        rows = await self.list_rows("orders")
+        max_seq = 0
+        for row in rows:
+            order_number = row.get("orderNumber") or ""
+            if order_number.startswith(needle):
+                suffix = order_number[len(needle):]
+                if suffix.isdigit():
+                    max_seq = max(max_seq, int(suffix))
+        return f"{prefix}-{max_seq + 1:04d}"

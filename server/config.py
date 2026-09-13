@@ -22,6 +22,7 @@ class Settings:
     reviewer_bot_token: str
     publisher_bot_token: str
     telegram_chat_id: int
+    publish_chat_id: int
     telegram_allowed_user_ids: list[int]
     telegram_webhook_secret: str
     apify_webhook_secret: str
@@ -55,6 +56,11 @@ def load_settings(env: dict | None = None) -> Settings:
     except ValueError as exc:
         raise ConfigError("TELEGRAM_CHAT_ID must be an integer") from exc
 
+    try:
+        publish_chat_id = int(_require(env, "PUBLISH_CHAT_ID"))
+    except ValueError as exc:
+        raise ConfigError("PUBLISH_CHAT_ID must be an integer") from exc
+
     allowed_raw = _require(env, "TELEGRAM_ALLOWED_USER_IDS")
     try:
         allowed_ids = [int(part.strip()) for part in allowed_raw.split(",") if part.strip()]
@@ -67,6 +73,7 @@ def load_settings(env: dict | None = None) -> Settings:
         reviewer_bot_token=_require(env, "REVIEWER_BOT_TOKEN"),
         publisher_bot_token=_require(env, "PUBLISHER_BOT_TOKEN"),
         telegram_chat_id=chat_id,
+        publish_chat_id=publish_chat_id,
         telegram_allowed_user_ids=allowed_ids,
         telegram_webhook_secret=_require(env, "TELEGRAM_WEBHOOK_SECRET"),
         apify_webhook_secret=_require(env, "APIFY_WEBHOOK_SECRET"),

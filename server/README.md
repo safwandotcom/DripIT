@@ -12,6 +12,7 @@ for the full design.
 | `REVIEWER_BOT_TOKEN` | `123456:AAE...` | Token for the internal review bot |
 | `PUBLISHER_BOT_TOKEN` | `789012:AAF...` | Token for the bot that posts publicly |
 | `TELEGRAM_CHAT_ID` | `-1001234567890` | The review chat's id |
+| `PUBLISH_CHAT_ID` | `-1009876543210` | The public channel/chat the publisher bot posts finished banners to. The publisher bot must be a member/admin of this chat/channel. Separate from `TELEGRAM_CHAT_ID`, which is the private review chat. |
 | `TELEGRAM_ALLOWED_USER_IDS` | `111111111,222222222` | Comma-separated Telegram user ids allowed to act |
 | `TELEGRAM_WEBHOOK_SECRET` | a random string you generate | Passed to Telegram's `setWebhook` as `secret_token` |
 | `APIFY_WEBHOOK_SECRET` | a random string you generate | Checked against the `X-Apify-Secret` header |
@@ -68,7 +69,8 @@ for the full design.
    DripIT dashboard under the configured brand.
 5. Send a deal with a title containing `_`, `*`, or `[` through Create
    Order — confirm it completes without a Telegram 400 error (Markdown
-   escaping holds).
+   escaping holds). Confirm the published caption shows literal
+   `[PRE-ORDER MALAYSIA]` brackets (not a broken/missing bracket or a link).
 6. Restart the Render service mid-review (Render dashboard → Manual
    Deploy, or just wait for a free-tier idle sleep) with a deal sitting at
    `awaiting_price` — confirm replying with a price afterwards still

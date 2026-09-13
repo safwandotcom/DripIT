@@ -14,7 +14,7 @@ from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 import bots
 import sheets_client as sheets_mod
 from config import Settings, load_settings
-from image_engine import ImageRenderError, render_banner
+from image_engine import render_banner
 from models import PENDING_ACTIONS, ScraperDeal
 from sheets_client import SheetsError
 
@@ -121,8 +121,8 @@ async def _process_publish(
             product_title=deal["title"], image_url=deal["image_url"], price_text=bdt_price
         )
         caption = _build_caption(deal, bdt_price)
-        await publisher_bot.publish_photo(settings.telegram_chat_id, image_bytes, caption)
-    except (ImageRenderError, bots.TelegramError) as exc:
+        await publisher_bot.publish_photo(settings.publish_chat_id, image_bytes, caption)
+    except Exception as exc:
         logger.exception("Failed to render/publish banner for deal %s", deal_id)
         try:
             await sheets.update_pending_deal(deal_id, status="awaiting_price")
@@ -141,7 +141,7 @@ async def _process_publish(
         if deal.get("pending_action") == "createorder":
             order_number = await sheets.next_order_number(settings.deal_brand)
             await sheets.append_order(_build_order_row(deal, bdt_price, order_number, settings.deal_brand))
-    except SheetsError as exc:
+    except Exception as exc:
         logger.exception("Banner published but bookkeeping failed for deal %s", deal_id)
         await reviewer_bot.send_message(
             reviewer_chat_id,
@@ -154,7 +154,7 @@ def _build_caption(deal: dict, bdt_price: str) -> str:
     sizes = bots.escape_markdown(deal["sizes"])
     return (
         "\U0001f4cc *FINAL POST*\n\n"
-        f"[PRE-ORDER MALAYSIA] {title}\n"
+        f"\\[PRE-ORDER MALAYSIA\\] {title}\n"
         "All the way from Malaysia to Bangladesh\n\n"
         f"\U0001f4b0 *Offer Price:* {bdt_price} BDT\n"
         f"\U0001f45f *Available Sizes:* {sizes}\n"
@@ -207,25 +207,32 @@ def create_app(settings: Settings) -> FastAPI:
         if x_apify_secret != settings.apify_webhook_secret:
             raise HTTPException(status_code=403, detail="Invalid secret")
 
-        await sheets.create_pending_deal({
-            "id": deal.deal_id,
-            "title": deal.title,
-            "myr_price": deal.myr_price,
-            "sizes": deal.sizes,
-            "image_url": deal.image_url,
-            "status": "awaiting_review",
-            "pending_action": "",
-            "created_at": _now_iso(),
-        })
+        try:
+            await sheets.create_pending_deal({
+                "id": deal.deal_id,
+                "title": deal.title,
+                "myr_price": deal.myr_price,
+                "sizes": deal.sizes,
+                "image_url": deal.image_url,
+                "status": "awaiting_review",
+                "pending_action": "",
+                "created_at": _now_iso(),
+            })
 
-        caption = (
-            "\U0001f6a8 *NEW DEAL DETECTED*\n\n"
-            f"\U0001f45f *Item:* {bots.escape_markdown(deal.title)}\n"
-            f"\U0001f3f7️ *MYR Price:* {deal.myr_price}\n"
-            f"\U0001f45f *Sizes:* {bots.escape_markdown(deal.sizes)}\n\n"
-            "Select action:"
-        )
-        await reviewer_bot.send_review_card(settings.telegram_chat_id, deal.image_url, caption, deal.deal_id)
+            caption = (
+                "\U0001f6a8 *NEW DEAL DETECTED*\n\n"
+                f"\U0001f45f *Item:* {bots.escape_markdown(deal.title)}\n"
+                f"\U0001f3f7️ *MYR Price:* {deal.myr_price}\n"
+                f"\U0001f45f *Sizes:* {bots.escape_markdown(deal.sizes)}\n\n"
+                "Select action:"
+            )
+            await reviewer_bot.send_review_card(
+                settings.telegram_chat_id, deal.image_url, caption, deal.deal_id
+            )
+        except (bots.TelegramError, SheetsError) as exc:
+            logger.exception("Failed to process scraped deal %s", deal.deal_id)
+            raise HTTPException(status_code=502, detail=f"Failed to process deal: {exc}") from exc
+
         return {"status": "ok", "deal_id": deal.deal_id}
 
     @app.post("/webhook/telegram-reviewer")

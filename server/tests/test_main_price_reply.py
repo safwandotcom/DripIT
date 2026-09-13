@@ -46,7 +46,7 @@ def _mock_pending_deal(deal_id: str, **overrides) -> None:
 def test_price_reply_publishes_and_creates_order_for_createorder_action():
     _mock_pending_deal("d1", pending_action="createorder")
     respx.get("https://x/i.jpg").mock(return_value=httpx.Response(200, content=_sample_png_bytes()))
-    respx.get(SHEETS_URL, params={"action": "list", "entity": "counters"}).mock(
+    respx.get(SHEETS_URL, params={"action": "list", "entity": "orders"}).mock(
         return_value=httpx.Response(200, json={"ok": True, "data": []})
     )
     save_route = respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
@@ -63,11 +63,14 @@ def test_price_reply_publishes_and_creates_order_for_createorder_action():
 
     assert resp.status_code == 200
     assert publish_route.called
+    # Legacy Markdown would parse a bare "[...]" as a link; the brackets must
+    # go out escaped so they render literally in the published caption.
+    assert b"\\[PRE-ORDER MALAYSIA\\]" in publish_route.calls.last.request.content
 
     saved_calls = [json.loads(c.request.content) for c in save_route.calls]
     order_write = next(c for c in saved_calls if c["entity"] == "orders")
     assert order_write["data"]["company"] == "drip_ittt"
-    assert order_write["data"]["orderNumber"] == "DI-1"
+    assert order_write["data"]["orderNumber"] == "DI-0001"
     assert order_write["data"]["productName"] == "Air Max"
     assert order_write["data"]["costPriceRM"] == 350
 
@@ -141,7 +144,7 @@ def test_publish_failure_reverts_status_and_notifies_reviewer():
 def test_order_creation_failure_after_publish_does_not_revert_or_duplicate():
     _mock_pending_deal("d5", pending_action="createorder")
     respx.get("https://x/i.jpg").mock(return_value=httpx.Response(200, content=_sample_png_bytes()))
-    respx.get(SHEETS_URL, params={"action": "list", "entity": "counters"}).mock(
+    respx.get(SHEETS_URL, params={"action": "list", "entity": "orders"}).mock(
         return_value=httpx.Response(500)
     )
     save_route = respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))

@@ -23,6 +23,20 @@ def test_scraper_deal_requires_title():
         ScraperDeal(deal_id="d1", myr_price=350, sizes="40", image_url="https://x/img.jpg")
 
 
+def test_scraper_deal_rejects_deal_id_with_invalid_characters():
+    with pytest.raises(ValidationError):
+        ScraperDeal(
+            deal_id="bad]id", title="X", myr_price=1, sizes="1", image_url="https://x/i.jpg"
+        )
+
+
+def test_scraper_deal_rejects_deal_id_too_long():
+    with pytest.raises(ValidationError):
+        ScraperDeal(
+            deal_id="a" * 41, title="X", myr_price=1, sizes="1", image_url="https://x/i.jpg"
+        )
+
+
 def test_pending_action_constants_match_callback_data_values():
     assert PENDING_ACTIONS == ("postonly", "createorder")
     assert "awaiting_price" in PENDING_STATUSES

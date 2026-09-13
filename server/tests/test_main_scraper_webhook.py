@@ -60,3 +60,17 @@ def test_scraper_deal_creates_pending_row_and_sends_review_card():
     sent = json.loads(send_route.calls.last.request.content)
     buttons = sent["reply_markup"]["inline_keyboard"][0]
     assert [b["callback_data"] for b in buttons] == ["reject:d1", "postonly:d1", "createorder:d1"]
+
+
+@respx.mock
+def test_scraper_deal_returns_502_on_telegram_failure():
+    respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    respx.post("https://api.telegram.org/bottest-reviewer-token/sendPhoto").mock(
+        return_value=httpx.Response(400, json={"ok": False, "description": "bad"})
+    )
+
+    resp = client.post(
+        "/webhook/scraper-deal", json=VALID_DEAL, headers={"X-Apify-Secret": "test-apify-secret"}
+    )
+
+    assert resp.status_code == 502

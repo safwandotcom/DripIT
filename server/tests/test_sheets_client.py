@@ -78,28 +78,32 @@ async def test_update_pending_deal_raises_when_not_found():
 
 
 @respx.mock
-async def test_next_order_number_increments_existing_counter():
-    respx.get(URL, params={"action": "list", "entity": "counters"}).mock(
-        return_value=httpx.Response(
-            200,
-            json={"ok": True, "data": [{"id": "drip_ittt", "orderSeq": 41, "invoiceSeq": 10, "receiptSeq": 5}]},
-        )
+async def test_next_order_number_scans_existing_orders_for_max_and_pads():
+    respx.get(URL, params={"action": "list", "entity": "orders"}).mock(
+        return_value=httpx.Response(200, json={"ok": True, "data": [
+            {"orderNumber": "DI-0001", "company": "drip_ittt"},
+            {"orderNumber": "DI-0041", "company": "drip_ittt"},
+            {"orderNumber": "NV-0099", "company": "NOVUS"},
+        ]})
     )
-    save_route = respx.post(URL).mock(return_value=httpx.Response(200, json={"ok": True}))
-
-    number = await SheetsClient(URL).next_order_number("drip_ittt")
-
-    assert number == "DI-42"
-    sent = json.loads(save_route.calls.last.request.content)
-    assert sent["data"]["orderSeq"] == 42
-    assert sent["data"]["invoiceSeq"] == 10  # other counters preserved
+    assert await SheetsClient(URL).next_order_number("drip_ittt") == "DI-0042"
 
 
 @respx.mock
-async def test_next_order_number_starts_at_one_for_new_brand():
-    respx.get(URL, params={"action": "list", "entity": "counters"}).mock(
+async def test_next_order_number_starts_at_0001_for_brand_with_no_orders():
+    respx.get(URL, params={"action": "list", "entity": "orders"}).mock(
         return_value=httpx.Response(200, json={"ok": True, "data": []})
     )
-    respx.post(URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    assert await SheetsClient(URL).next_order_number("NOVUS") == "NV-0001"
 
-    assert await SheetsClient(URL).next_order_number("NOVUS") == "NV-1"
+
+@respx.mock
+async def test_next_order_number_ignores_malformed_order_numbers():
+    respx.get(URL, params={"action": "list", "entity": "orders"}).mock(
+        return_value=httpx.Response(200, json={"ok": True, "data": [
+            {"orderNumber": "DI-abc", "company": "drip_ittt"},
+            {"orderNumber": None, "company": "drip_ittt"},
+            {"orderNumber": "DI-0005", "company": "drip_ittt"},
+        ]})
+    )
+    assert await SheetsClient(URL).next_order_number("drip_ittt") == "DI-0006"

@@ -1,14 +1,14 @@
 """Pydantic schemas and shared constants for the deal pipeline."""
 from __future__ import annotations
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 PENDING_STATUSES = ("awaiting_review", "awaiting_price", "processing", "published", "rejected")
 PENDING_ACTIONS = ("postonly", "createorder")
 
 
 class ScraperDeal(BaseModel):
-    deal_id: str
+    deal_id: str = Field(max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
     title: str
     myr_price: float
     sizes: str

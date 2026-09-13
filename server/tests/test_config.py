@@ -6,6 +6,7 @@ BASE_ENV = {
     "REVIEWER_BOT_TOKEN": "r-token",
     "PUBLISHER_BOT_TOKEN": "p-token",
     "TELEGRAM_CHAT_ID": "-1001234567890",
+    "PUBLISH_CHAT_ID": "-1009876543210",
     "TELEGRAM_ALLOWED_USER_IDS": "111, 222",
     "TELEGRAM_WEBHOOK_SECRET": "wh-secret",
     "APIFY_WEBHOOK_SECRET": "apify-secret",
@@ -18,6 +19,7 @@ def test_load_settings_parses_valid_env():
     settings = load_settings(dict(BASE_ENV))
     assert settings.reviewer_bot_token == "r-token"
     assert settings.telegram_chat_id == -1001234567890
+    assert settings.publish_chat_id == -1009876543210
     assert settings.telegram_allowed_user_ids == [111, 222]
     assert settings.deal_brand == "drip_ittt"
 
