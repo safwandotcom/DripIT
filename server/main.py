@@ -6,13 +6,15 @@ instead of touching real environment variables (only the module-level
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 
 import bots
 import sheets_client as sheets_mod
 from config import Settings, load_settings
+from image_engine import ImageRenderError, render_banner
 from models import PENDING_ACTIONS, ScraperDeal
 from sheets_client import SheetsError
 
@@ -65,6 +67,116 @@ async def _handle_callback(
         )
 
 
+_REF_PATTERN = re.compile(r"\[REF:([^\]]+)\]")
+
+
+async def _handle_message(
+    msg: dict,
+    settings: Settings,
+    reviewer_bot: bots.TelegramBot,
+    publisher_bot: bots.TelegramBot,
+    sheets: sheets_mod.SheetsClient,
+    background_tasks: BackgroundTasks,
+) -> None:
+    chat_id = msg["chat"]["id"]
+    user_id = msg.get("from", {}).get("id")
+    if not _is_allowed(settings, chat_id, user_id):
+        return
+
+    text = (msg.get("text") or "").strip()
+    reply_to_text = msg.get("reply_to_message", {}).get("text", "")
+    match = _REF_PATTERN.search(reply_to_text)
+    if not match or not text.isdigit():
+        return
+
+    deal_id = match.group(1)
+    try:
+        deal = await sheets.get_pending_deal(deal_id)
+    except SheetsError:
+        deal = None
+
+    if deal is None or deal.get("status") != "awaiting_price":
+        await reviewer_bot.send_message(chat_id, "⚠️ This deal was already processed or has expired.")
+        return
+
+    # Claim the row immediately, before any slow work, so a duplicate or
+    # retried reply can't double-publish.
+    deal = await sheets.update_pending_deal(deal_id, status="processing")
+    await reviewer_bot.send_message(chat_id, f"⏳ Rendering banner for {deal['title']} at {text} BDT...")
+    background_tasks.add_task(_process_publish, deal, text, chat_id, settings, reviewer_bot, publisher_bot, sheets)
+
+
+async def _process_publish(
+    deal: dict,
+    bdt_price: str,
+    reviewer_chat_id: int,
+    settings: Settings,
+    reviewer_bot: bots.TelegramBot,
+    publisher_bot: bots.TelegramBot,
+    sheets: sheets_mod.SheetsClient,
+) -> None:
+    deal_id = deal["id"]
+    try:
+        image_bytes = await render_banner(
+            product_title=deal["title"], image_url=deal["image_url"], price_text=bdt_price
+        )
+        caption = _build_caption(deal, bdt_price)
+        await publisher_bot.publish_photo(settings.telegram_chat_id, image_bytes, caption)
+
+        if deal.get("pending_action") == "createorder":
+            order_number = await sheets.next_order_number(settings.deal_brand)
+            await sheets.append_order(_build_order_row(deal, bdt_price, order_number, settings.deal_brand))
+
+        await sheets.update_pending_deal(deal_id, status="published")
+    except (ImageRenderError, bots.TelegramError, SheetsError) as exc:
+        logger.exception("Failed to publish deal %s", deal_id)
+        try:
+            await sheets.update_pending_deal(deal_id, status="awaiting_price")
+        except SheetsError:
+            logger.exception("Failed to revert status for deal %s", deal_id)
+        await reviewer_bot.send_message(
+            reviewer_chat_id, f"⚠️ Failed to publish: {exc}. Reply again to retry."
+        )
+
+
+def _build_caption(deal: dict, bdt_price: str) -> str:
+    title = bots.escape_markdown(deal["title"])
+    sizes = bots.escape_markdown(deal["sizes"])
+    return (
+        "\U0001f4cc *FINAL POST*\n\n"
+        f"[PRE-ORDER MALAYSIA] {title}\n"
+        "All the way from Malaysia to Bangladesh\n\n"
+        f"\U0001f4b0 *Offer Price:* {bdt_price} BDT\n"
+        f"\U0001f45f *Available Sizes:* {sizes}\n"
+        "\U0001f4e6 *Delivery:* 3-4 weeks, if lucky could be 2 weeks.\n"
+        "\U0001f4cc We only deal with Authentic products.\n\n"
+        "Inbox us to order | 30% Advance Required"
+    )
+
+
+def _build_order_row(deal: dict, bdt_price: str, order_number: str, brand: str) -> dict:
+    myr_price = float(deal["myr_price"])
+    bdt = float(bdt_price)
+    return {
+        "id": f"deal-{deal['id']}",
+        "company": brand,
+        "orderNumber": order_number,
+        "customerName": "",
+        "customerPhone": "",
+        "customerFb": "",
+        "productName": deal["title"],
+        "productDescription": f"Sizes: {deal['sizes']}",
+        "costPriceRM": myr_price,
+        "conversionRate": "",
+        "multiplier": round(bdt / myr_price, 2) if myr_price else "",
+        "status": "pending",
+        "orderDate": _now_iso(),
+        "advancePaid": False,
+        "deliveryDate": "",
+        "notes": "Created via Telegram deal pipeline — needs customer name/phone/payment",
+    }
+
+
 def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="Sneaker Deal Pipeline")
 
@@ -108,7 +220,9 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.post("/webhook/telegram-reviewer")
     async def handle_telegram_update(
-        request: Request, x_telegram_bot_api_secret_token: str = Header(default="")
+        request: Request,
+        background_tasks: BackgroundTasks,
+        x_telegram_bot_api_secret_token: str = Header(default=""),
     ):
         if x_telegram_bot_api_secret_token != settings.telegram_webhook_secret:
             raise HTTPException(status_code=403, detail="Invalid secret")
@@ -117,6 +231,10 @@ def create_app(settings: Settings) -> FastAPI:
 
         if "callback_query" in data:
             await _handle_callback(data["callback_query"], settings, reviewer_bot, sheets)
+            return {"status": "ok"}
+
+        if "message" in data:
+            await _handle_message(data["message"], settings, reviewer_bot, publisher_bot, sheets, background_tasks)
             return {"status": "ok"}
 
         return {"status": "ignored"}
