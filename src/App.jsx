@@ -4987,8 +4987,31 @@ function getSheet(entity) {
   if (!sheet) {
     sheet = ss.insertSheet(entity);
     if (HEADERS[entity]) sheet.appendRow(HEADERS[entity]);
+    return sheet;
+  }
+  // Reconcile: an existing sheet's header row is never rewritten in place —
+  // that would shift every existing data row's columns out from under it.
+  // Instead, append any HEADERS[entity] columns the sheet doesn't have yet
+  // as new trailing columns, so old rows and their existing columns are
+  // never disturbed.
+  if (HEADERS[entity]) {
+    const lastCol = sheet.getLastColumn();
+    const currentHeaders = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+    const missing = HEADERS[entity].filter(function(h) { return currentHeaders.indexOf(h) === -1; });
+    if (missing.length > 0) {
+      sheet.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
+    }
   }
   return sheet;
+}
+
+function getEffectiveHeaders(entity, sheet) {
+  // The sheet's actual header row (after getSheet() has reconciled it) is
+  // the source of truth for column order — always use this to build rows,
+  // never assume HEADERS[entity]'s order matches an existing sheet's.
+  const lastCol = sheet.getLastColumn();
+  if (lastCol === 0) return HEADERS[entity];
+  return sheet.getRange(1, 1, 1, lastCol).getValues()[0];
 }
 
 function doPost(e) {
@@ -4999,7 +5022,7 @@ function doPost(e) {
 
     if (action === 'replaceAll') {
       const sheet = getSheet(entity);
-      const headers = HEADERS[entity];
+      const headers = getEffectiveHeaders(entity, sheet);
       // Clear data rows only (keep header)
       const lastRow = sheet.getLastRow();
       if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).clearContent();
@@ -5017,7 +5040,7 @@ function doPost(e) {
     if (action === 'save') {
       // Upsert single row by id
       const sheet = getSheet(entity);
-      const headers = HEADERS[entity];
+      const headers = getEffectiveHeaders(entity, sheet);
       const idCol = 1; // 'id' is always first
       const allData = sheet.getDataRange().getValues();
       const rowIdx = allData.slice(1).findIndex(r => String(r[0]) === String(data.id));
