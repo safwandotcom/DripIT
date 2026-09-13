@@ -1094,12 +1094,9 @@ def create_app(settings: Settings) -> FastAPI:
     publisher_bot = bots.TelegramBot(settings.publisher_bot_token)
     sheets = sheets_mod.SheetsClient(settings.sheets_url)
 
-    # Stashed on app.state so later tasks (Task 8, 9) can extend this same
-    # app instance with more routes that need the same bot/sheets clients.
-    app.state.settings = settings
-    app.state.reviewer_bot = reviewer_bot
-    app.state.publisher_bot = publisher_bot
-    app.state.sheets = sheets
+    # Tasks 8 and 9 add more routes/helpers inside this same create_app
+    # function, closing over these same reviewer_bot/publisher_bot/sheets/
+    # settings variables directly — no app.state indirection needed.
 
     @app.get("/healthz")
     async def healthz():
