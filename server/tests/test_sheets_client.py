@@ -9,6 +9,16 @@ from sheets_client import SheetsClient, SheetsError
 URL = "https://script.google.com/macros/s/test/exec"
 
 
+def test_default_client_follows_redirects():
+    # Apps Script Web Apps always 302-redirect every request (GET and POST)
+    # to a signed script.googleusercontent.com URL. httpx does not follow
+    # redirects by default — without this, every real call would see a bare
+    # 302 (GET) or silently lose its body (POST). Confirmed against a real
+    # deployed Apps Script during rollout.
+    client = SheetsClient(URL)
+    assert client._client.follow_redirects is True
+
+
 @respx.mock
 async def test_list_rows_returns_data_on_success():
     respx.get(URL, params={"action": "list", "entity": "pendingDeals"}).mock(

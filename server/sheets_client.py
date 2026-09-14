@@ -18,7 +18,11 @@ class SheetsError(RuntimeError):
 class SheetsClient:
     def __init__(self, base_url: str, client: httpx.AsyncClient | None = None):
         self._url = base_url
-        self._client = client or httpx.AsyncClient(timeout=30.0)
+        # Apps Script Web Apps unconditionally 302-redirect every request
+        # (GET and POST alike) to a signed script.googleusercontent.com URL —
+        # httpx does not follow redirects by default, so without this every
+        # call here would either see the bare 302 or lose the POST body.
+        self._client = client or httpx.AsyncClient(timeout=30.0, follow_redirects=True)
 
     async def list_rows(self, entity: str) -> list[dict]:
         response = await self._client.get(self._url, params={"action": "list", "entity": entity})
