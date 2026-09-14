@@ -2,17 +2,28 @@
 the "paste a link" flow in main.py — the manual counterpart to deals that
 normally arrive automatically from the Apify actor.
 
-Extraction is regex-based Open Graph / Twitter Card meta-tag reading, not a
-full HTML parser: big retail product pages (Nike, adidas, Foot Locker, most
-Shopify/WooCommerce stores) reliably expose `og:title`, `og:image`, and a
-`product:price:amount`/`og:price:amount` meta tag, and reading just those
-four tags avoids adding a DOM-parsing dependency to this project for a job
-regex handles fine. A page that doesn't expose them raises LinkScrapeError
-naming what's missing, rather than guessing.
+Two extraction strategies, tried in order:
+
+1. Open Graph / Twitter Card meta tags (`og:title`, `og:image`,
+   `product:price:amount`/`og:price:amount`). Works for many stores, but
+   NOT for all of them — Under Armour's own site, for instance, sets
+   `og:image:width/height/type` but never a bare `og:image`, and never any
+   price meta tag at all.
+2. schema.org Product/Offer JSON-LD (`<script type="application/ld+json">`
+   containing `{"@type":"Product","offers":{"price":...}}`) — what Under
+   Armour and most modern storefronts (Shopify, Magento, plenty of custom
+   builds) actually embed for SEO. Verified directly against a live
+   underarmour.com.my product page rather than assumed.
+
+Both are regex/json based, not a full HTML parser — reading a handful of
+known shapes is enough for this job and avoids a DOM-parsing dependency.
+A page exposing neither raises LinkScrapeError naming what's missing,
+rather than guessing.
 """
 from __future__ import annotations
 
 import ipaddress
+import json
 import re
 from html import unescape
 from urllib.parse import urlparse
@@ -20,16 +31,23 @@ from urllib.parse import urlparse
 import httpx
 
 _MAX_HTML_BYTES = 3_000_000
-_USER_AGENT = "Mozilla/5.0 (compatible; DripITLinkBot/1.0; +https://github.com/)"
+# A plain browser UA, not a self-identified bot string — some storefronts
+# (adidas.com among them) flatly 403 anything that announces itself as a
+# bot, even for a page whose product markup is meant to be publicly read.
+_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 
 _TITLE_PROPS = ["og:title", "twitter:title"]
 _IMAGE_PROPS = ["og:image", "og:image:secure_url", "twitter:image"]
 _PRICE_PROPS = ["product:price:amount", "og:price:amount"]
 
+_JSON_LD_PATTERN = re.compile(
+    r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', re.IGNORECASE | re.DOTALL
+)
+
 
 class LinkScrapeError(RuntimeError):
     """Raised when a product link can't be fetched or doesn't expose the
-    meta tags this scraper looks for."""
+    product data this scraper looks for."""
 
 
 def _validate_public_url(url: str) -> None:
@@ -74,6 +92,65 @@ def _extract_meta(html: str, prop_names: list[str]) -> str | None:
     return None
 
 
+def _iter_json_ld_nodes(data):
+    """Walks a parsed JSON-LD payload and yields every dict node found.
+    Handles a single object, a top-level list of objects, an `@graph`
+    array, and a ProductGroup's `hasVariant` array — Nike, for one, puts
+    its actual per-size Product/Offer nodes only inside hasVariant, not at
+    the top level, so a walk that stops at @graph alone misses the price
+    entirely."""
+    if isinstance(data, list):
+        for item in data:
+            yield from _iter_json_ld_nodes(item)
+        return
+    if not isinstance(data, dict):
+        return
+    yield data
+    for key in ("@graph", "hasVariant"):
+        nested = data.get(key)
+        if isinstance(nested, list):
+            for item in nested:
+                yield from _iter_json_ld_nodes(item)
+
+
+def _json_ld_type_matches(node: dict, wanted: str) -> bool:
+    node_type = node.get("@type")
+    if isinstance(node_type, list):
+        return wanted in node_type
+    return node_type == wanted
+
+
+def _extract_json_ld_product(html: str) -> dict | None:
+    """Finds a schema.org Product node with a usable name/image/price and
+    returns {"title", "image_url", "price_raw"}, or None."""
+    for script_body in _JSON_LD_PATTERN.findall(html):
+        try:
+            data = json.loads(script_body.strip())
+        except ValueError:
+            continue
+
+        for node in _iter_json_ld_nodes(data):
+            if not _json_ld_type_matches(node, "Product"):
+                continue
+
+            title = node.get("name")
+
+            image = node.get("image")
+            if isinstance(image, list):
+                image = image[0] if image else None
+            elif isinstance(image, dict):
+                image = image.get("url")
+
+            offers = node.get("offers")
+            if isinstance(offers, list):
+                offers = offers[0] if offers else None
+            price_raw = offers.get("price") if isinstance(offers, dict) else None
+
+            if title and image and price_raw:
+                return {"title": str(title).strip(), "image_url": str(image).strip(), "price_raw": str(price_raw)}
+    return None
+
+
 async def scrape_product_link(url: str, client: httpx.AsyncClient | None = None) -> dict:
     """Fetches `url` and returns {"title", "image_url", "price"}, or raises
     LinkScrapeError with a reviewer-readable reason."""
@@ -103,15 +180,26 @@ async def scrape_product_link(url: str, client: httpx.AsyncClient | None = None)
     image_url = _extract_meta(html, _IMAGE_PROPS)
     price_raw = _extract_meta(html, _PRICE_PROPS)
 
+    # Open Graph tags don't cover every field on every site (Under Armour's
+    # own pages, for one, never expose a price meta tag at all) — fall back
+    # to schema.org Product JSON-LD for whatever's still missing.
+    if not title or not image_url or not price_raw:
+        ld_product = _extract_json_ld_product(html)
+        if ld_product:
+            title = title or ld_product["title"]
+            image_url = image_url or ld_product["image_url"]
+            price_raw = price_raw or ld_product["price_raw"]
+
     missing = [name for name, value in [("title", title), ("image", image_url), ("price", price_raw)] if not value]
     if missing:
         raise LinkScrapeError(
-            f"Couldn't find {', '.join(missing)} on that page — it may not expose Open Graph product tags."
+            f"Couldn't find {', '.join(missing)} on that page — it exposes neither Open Graph "
+            "product tags nor schema.org Product data."
         )
 
     try:
         price = float(price_raw.replace(",", ""))
     except ValueError as exc:
-        raise LinkScrapeError(f"Found a price tag but couldn't parse it: {price_raw!r}") from exc
+        raise LinkScrapeError(f"Found a price but couldn't parse it: {price_raw!r}") from exc
 
     return {"title": title, "image_url": image_url, "price": price}
