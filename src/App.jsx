@@ -5,7 +5,7 @@ import {
   Download, Trash2, ChevronRight, ChevronDown, AlertCircle, MessageSquare,
   Calendar, Phone, MapPin, FileSpreadsheet, BookOpen, FileText,
   Edit3, Printer, QrCode, ArrowUpRight, ArrowDownRight, Building2,
-  Banknote, Landmark, ArrowLeftRight, Pencil, Save, Eye, Upload
+  Banknote, Landmark, ArrowLeftRight, Pencil, Save, Eye, Upload, ImagePlus
 } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -957,6 +957,7 @@ export default function App() {
             {view === 'receipts' && <Receipts orders={cOrders} ledger={cLedger} company={company} onShowReceipt={setPrintReceipt} onOpenOrder={setSelectedOrder} />}
             {view === 'export' && <ExportView orders={cOrders} expenses={cExpenses} ledger={cLedger} loans={cLoans} invoices={cInvoices} showToast={showToast} company={company} />}
             {view === 'postmaker' && <PostMaker company={company} showToast={showToast} />}
+            {view === 'newpostmaker' && <NewPostMaker company={company} showToast={showToast} />}
           </div>
         </main>
       </div>
@@ -993,7 +994,7 @@ function getDefaultAccounts() {
 function GlobalStyles() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter+Tight:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter+Tight:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&family=Alfa+Slab+One&family=Archivo+Black&family=Space+Mono:wght@400;700&display=swap');
       * { box-sizing: border-box; }
       body { margin: 0; font-family: ${T.sans}; }
       input, select, textarea, button { font-family: inherit; }
@@ -1059,6 +1060,7 @@ function Sidebar({ view, setView, pendingNavigate, onConfirmNavigate, onCancelNa
     { id: 'expenses', label: 'Expenses', icon: Receipt },
     { id: 'books', label: 'Books & Ledger', icon: BookOpen },
     { id: 'postmaker', label: 'Post Maker', icon: QrCode },
+    { id: 'newpostmaker', label: 'New Post Maker', icon: ImagePlus },
     { id: 'export', label: 'Export & Sync', icon: FileSpreadsheet }
   ];
 
@@ -1101,7 +1103,8 @@ function Header({ view, stats, company, currentCompany, setCurrentCompany }) {
     invoices: { title: 'Sales Invoice', sub: 'A4-ready invoices with barcode' },
     receipts: { title: 'Paid Receipts', sub: 'Confirmations of completed orders' },
     export: { title: 'Export & Sync', sub: 'Back up your data to Google Sheets' },
-    postmaker: { title: 'Post Maker', sub: 'Create projects and generate product images' }
+    postmaker: { title: 'Post Maker', sub: 'Create projects and generate product images' },
+    newpostmaker: { title: 'New Post Maker', sub: 'Photo, name, price — same banner the Telegram bot makes' }
   };
   const t = titles[view] || titles.dashboard;
 
@@ -4858,6 +4861,197 @@ function PostMaker({ company, showToast }) {
 }
 
 
+
+// ═══════════════════════════════════════════════════════════════════
+// NEW POST MAKER — matches the Telegram bot's banner exactly (see
+// server/image_engine.py: header "PRE-ORDER / FROM MALAYSIA" top-left,
+// brand wordmark top-right, product photo, name, price, footer with
+// social icons + handle (left) and phone (right). Only three inputs —
+// photo, name, price — for making one by hand for a site the bot can't
+// scrape (adidas, Shein), same as the automated pipeline would.
+// ═══════════════════════════════════════════════════════════════════
+const NPM_CANVAS = 1080; // matches CANVAS_SIZE in image_engine.py exactly
+
+function npmPriceFontSize(digits) {
+  // Mirrors _autosize_font's intent (never truncate, shrink instead) with
+  // fixed steps rather than true text-measurement — plenty for real BDT
+  // sneaker prices (4-6 digits).
+  if (digits.length > 8) return 40;
+  if (digits.length > 6) return 52;
+  return 72;
+}
+
+// Builds the banner as a raw HTML string — used identically for the live
+// on-screen preview (scaled down via CSS transform) and for the PNG
+// export (rendered at native 1080x1080 in a hidden window and captured
+// with html2canvas), so what you see is exactly what downloads.
+function buildTelegramCardHTML({ photoDataUrl, productName, price }, company) {
+  const ink = '#1E1B18', muted = '#8A8177';
+  const handle = (company.displayName || '').toLowerCase().replace(/\s+/g, '_');
+  const phone = (company.contact || '').replace(/^\+880/, '0');
+  const priceDigits = String(price || '').replace(/[^\d]/g, '') || '0';
+  const priceSize = npmPriceFontSize(priceDigits);
+  const title = (productName || 'PRODUCT NAME').toUpperCase();
+  const phoneSvg = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.29 1.223 14 14 0 0 0 6.392 6.394"/></svg>`;
+
+  return `
+    <div style="width:${NPM_CANVAS}px;height:${NPM_CANVAS}px;background:#FFFFFF;position:relative;overflow:hidden;">
+      <div style="position:absolute;left:70px;top:44px;font-family:'Archivo Black',sans-serif;font-size:26px;line-height:32px;color:${ink};letter-spacing:0.01em;">PRE-ORDER</div>
+      <div style="position:absolute;left:70px;top:76px;font-family:'Archivo Black',sans-serif;font-size:26px;line-height:32px;color:${ink};letter-spacing:0.01em;">FROM MALAYSIA</div>
+      <div style="position:absolute;right:70px;top:60px;font-family:'Alfa Slab One',serif;font-size:32px;color:${ink};">${company.displayName}</div>
+
+      <div style="position:absolute;left:90px;top:158px;width:900px;height:502px;display:flex;align-items:center;justify-content:center;">
+        ${photoDataUrl
+          ? `<img src="${photoDataUrl}" crossOrigin="anonymous" style="max-width:868px;max-height:470px;object-fit:contain;filter:drop-shadow(8px 14px 16px rgba(20,15,10,0.28));" />`
+          : `<div style="width:100%;height:100%;border:2px dashed #DDD6C7;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#B7AF9E;font-family:'Space Grotesk',sans-serif;font-size:18px;">Product photo</div>`}
+      </div>
+
+      <div style="position:absolute;left:50%;top:693px;transform:translateX(-50%);max-width:940px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:'Archivo Black',sans-serif;font-size:34px;color:${ink};text-align:center;">${title}</div>
+
+      <div style="position:absolute;left:50%;top:${782 - priceSize * 0.72}px;transform:translateX(-50%);display:flex;align-items:baseline;gap:18px;">
+        <div style="font-family:'Alfa Slab One',serif;font-size:${priceSize}px;color:${ink};">${priceDigits}</div>
+        <div style="font-family:'Space Mono',monospace;font-weight:700;font-size:26px;color:${muted};">TAKA</div>
+      </div>
+
+      <div style="position:absolute;left:70px;top:988px;display:flex;align-items:center;gap:10px;">
+        <div style="width:44px;height:44px;border-radius:50%;background:#1877F2;display:flex;align-items:center;justify-content:center;">
+          <span style="font-family:'Archivo Black',sans-serif;color:#FFFFFF;font-size:22px;">f</span>
+        </div>
+        <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(45deg,#405DE6,#C13584,#F58529);position:relative;">
+          <div style="position:absolute;inset:10px;border:3px solid #FFFFFF;border-radius:12px;"></div>
+          <div style="position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border:3px solid #FFFFFF;border-radius:50%;"></div>
+          <div style="position:absolute;right:11px;top:11px;width:5px;height:5px;background:#FFFFFF;border-radius:50%;"></div>
+        </div>
+        <div style="font-family:'Space Mono',monospace;font-weight:700;font-size:24px;color:${ink};">${handle}</div>
+      </div>
+      <div style="position:absolute;right:70px;top:988px;display:flex;align-items:center;gap:14px;">
+        <div style="font-family:'Space Mono',monospace;font-weight:700;font-size:24px;color:${ink};">${phone}</div>
+        <div style="width:44px;height:44px;border-radius:50%;background:${ink};display:flex;align-items:center;justify-content:center;">${phoneSvg}</div>
+      </div>
+    </div>
+  `;
+}
+
+function NewPostMaker({ company, showToast }) {
+  const blank = { photoDataUrl: '', productName: '', price: '' };
+  const [form, setForm] = useState(blank);
+  const [downloading, setDownloading] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const onPhotoChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setForm(f => ({ ...f, photoDataUrl: reader.result }));
+    reader.readAsDataURL(file);
+  };
+
+  const startOver = () => {
+    setForm(blank);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const download = () => {
+    if (!form.photoDataUrl) return showToast('Add a product photo first', 'error');
+    if (!form.productName.trim()) return showToast('Enter a product name', 'error');
+    if (!String(form.price).replace(/[^\d]/g, '')) return showToast('Enter a price', 'error');
+
+    setDownloading(true);
+    const cardHtml = buildTelegramCardHTML(form, company);
+    const win = window.open('', '_blank', `width=${NPM_CANVAS},height=${NPM_CANVAS}`);
+    if (!win) {
+      setDownloading(false);
+      return showToast('Pop-up blocked — allow pop-ups for this site to download', 'error');
+    }
+    win.document.write(`<!DOCTYPE html><html><head>
+      <title>Download - ${form.productName || 'Post'}</title>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Archivo+Black&family=Space+Mono:wght@400;700&family=Space+Grotesk&display=swap">
+      <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"><\/script>
+      <style>*{box-sizing:border-box;margin:0;padding:0;}body{background:#EFEBE0;display:flex;align-items:center;justify-content:center;min-height:100vh;}</style>
+      </head><body>
+      <div id="card">${cardHtml}<\/div>
+      <script>
+        window.onload = function() {
+          document.fonts.ready.then(function() {
+            html2canvas(document.getElementById("card"), {
+              width: ${NPM_CANVAS}, height: ${NPM_CANVAS}, scale: 1,
+              useCORS: true, allowTaint: true, backgroundColor: '#FFFFFF', logging: false
+            }).then(function(canvas) {
+              var link = document.createElement("a");
+              link.download = "${(form.productName || 'product').replace(/[^a-zA-Z0-9]/g, '_')}.png";
+              link.href = canvas.toDataURL("image/png");
+              link.click();
+              setTimeout(function() { window.close(); }, 500);
+            });
+          });
+        };
+      <\/script>
+      </body></html>`);
+    win.document.close();
+    setTimeout(() => setDownloading(false), 3000);
+  };
+
+  const scale = 460 / NPM_CANVAS;
+
+  return (
+    <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', gap: 32, alignItems: 'flex-start' }}>
+      <div className="pcg-card" style={{ flex: '0 0 320px', padding: 22 }}>
+        <Field label="Product Photo">
+          {form.photoDataUrl ? (
+            <div style={{ position: 'relative' }}>
+              <img src={form.photoDataUrl} style={{ width: '100%', height: 160, objectFit: 'contain', background: '#F7F4EE', borderRadius: 8, border: `1px solid ${T.border}` }} />
+              <button onClick={() => fileInputRef.current?.click()} className="pcg-btn pcg-btn-secondary pcg-btn-sm" style={{ marginTop: 8, width: '100%', justifyContent: 'center' }}>Change photo</button>
+            </div>
+          ) : (
+            <button onClick={() => fileInputRef.current?.click()} style={{
+              width: '100%', height: 160, border: `2px dashed ${T.border}`, borderRadius: 8, background: T.cream,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
+              color: T.muted, cursor: 'pointer', fontSize: 13
+            }}>
+              <Upload size={22} strokeWidth={1.5} /> Click to upload photo
+            </button>
+          )}
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={onPhotoChange} style={{ display: 'none' }} />
+        </Field>
+
+        <div style={{ marginTop: 16 }}>
+          <Field label="Product Name">
+            <input className="pcg-input" value={form.productName} onChange={e => setForm(f => ({ ...f, productName: e.target.value }))} placeholder="e.g. Nike Pegasus Plus 2" />
+          </Field>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <Field label="Price (BDT)">
+            <input className="pcg-input" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="e.g. 7,600" inputMode="numeric" />
+          </Field>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+          <button onClick={download} disabled={downloading} className="pcg-btn" style={{ flex: 1, justifyContent: 'center' }}>
+            <Download size={15} /> {downloading ? 'Preparing…' : 'Download PNG'}
+          </button>
+          <button onClick={startOver} className="pcg-btn pcg-btn-secondary pcg-btn-sm">New</button>
+        </div>
+        <div style={{ marginTop: 12, fontSize: 11.5, color: T.muted, lineHeight: 1.6 }}>
+          Not saved — download before starting the next one.
+        </div>
+      </div>
+
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 11.5, color: T.muted, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 500 }}>Preview</div>
+        <div style={{
+          width: NPM_CANVAS * scale, height: NPM_CANVAS * scale, overflow: 'hidden',
+          border: `1px solid ${T.border}`, borderRadius: 4, boxShadow: '0 10px 40px rgba(0,0,0,0.08)'
+        }}>
+          <div
+            style={{ width: NPM_CANVAS, height: NPM_CANVAS, transform: `scale(${scale})`, transformOrigin: 'top left' }}
+            dangerouslySetInnerHTML={{ __html: buildTelegramCardHTML(form, company) }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ExportView({ orders, expenses, ledger, loans, invoices, showToast, company }) {
   const SYNC_URL_KEY = 'po_sheets_url';
