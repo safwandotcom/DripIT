@@ -18,6 +18,13 @@ class ScraperDeal(BaseModel):
     "Buy 3 at 20% Off Sitewide"). Not a per-item guarantee — surfaced to the
     reviewer and the published caption as a disclaimer, not applied to price."""
 
+    on_sale: bool = False
+    """True when the item was scraped from a designated sale/clearance page
+    (the Apify actor's "Sale page URLs" input) rather than a regular listing.
+    Page context, not a verified per-item discount — same disclaim-don't-trust
+    treatment as promo_note. Lets a deal through main.py's price-range filter
+    even when priced above the normal review ceiling."""
+
     @field_validator("myr_price", mode="before")
     @classmethod
     def _parse_price(cls, value):

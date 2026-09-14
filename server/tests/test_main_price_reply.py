@@ -83,6 +83,26 @@ def test_price_reply_publishes_and_creates_order_for_createorder_action():
 
 
 @respx.mock
+def test_price_reply_includes_sale_note_when_deal_was_on_sale():
+    _mock_pending_deal("d1s", pending_action="postonly", on_sale=True)
+    respx.get("https://x/i.jpg").mock(return_value=httpx.Response(200, content=_sample_png_bytes()))
+    respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    respx.post("https://api.telegram.org/bottest-reviewer-token/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+    publish_route = respx.post("https://api.telegram.org/bottest-publisher-token/sendPhoto").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    resp = client.post(
+        "/webhook/telegram-reviewer", headers=SECRET_HEADERS, json=_price_reply_payload("d1s", "6500")
+    )
+
+    assert resp.status_code == 200
+    assert b"Scraped from a sale page" in publish_route.calls.last.request.content
+
+
+@respx.mock
 def test_price_reply_recognizes_brand_in_caption_and_order():
     _mock_pending_deal("d1n", title="Nike Air Force 1 Low", pending_action="createorder")
     respx.get("https://x/i.jpg").mock(return_value=httpx.Response(200, content=_sample_png_bytes()))

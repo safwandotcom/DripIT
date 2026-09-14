@@ -50,6 +50,18 @@ def test_scraper_deal_accepts_promo_note():
     assert deal.promo_note == "Buy 3 at 20% Off Sitewide"
 
 
+def test_scraper_deal_on_sale_defaults_to_false():
+    deal = ScraperDeal(deal_id="d1", title="X", myr_price=1, sizes="1", image_url="https://x/i.jpg")
+    assert deal.on_sale is False
+
+
+def test_scraper_deal_accepts_on_sale_true():
+    deal = ScraperDeal(
+        deal_id="d1", title="X", myr_price=1, sizes="1", image_url="https://x/i.jpg", on_sale=True
+    )
+    assert deal.on_sale is True
+
+
 def test_pending_action_constants_match_callback_data_values():
     assert PENDING_ACTIONS == ("postonly", "createorder")
     assert "awaiting_price" in PENDING_STATUSES

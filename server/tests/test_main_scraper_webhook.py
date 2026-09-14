@@ -167,6 +167,42 @@ def test_scraper_deal_accepts_price_at_range_boundaries():
 
 
 @respx.mock
+def test_scraper_deal_on_sale_bypasses_the_price_ceiling():
+    save_route = respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    send_route = respx.post("https://api.telegram.org/bottest-reviewer-token/sendPhoto").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    ua_sale_deal = {**VALID_DEAL, "deal_id": "d7", "title": "UA Pulse", "myr_price": 379.0, "on_sale": True}
+    resp = client.post(
+        "/webhook/scraper-deal", json=ua_sale_deal, headers={"X-Apify-Secret": "test-apify-secret"}
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok", "deal_id": "d7"}
+
+    saved = json.loads(save_route.calls.last.request.content)
+    assert saved["data"]["on_sale"] is True
+
+    sent = json.loads(send_route.calls.last.request.content)
+    assert "Scraped from a sale page" in sent["caption"]
+
+
+@respx.mock
+def test_scraper_deal_not_on_sale_still_filtered_above_range():
+    # Same price as the sale case above, but on_sale defaults to False —
+    # still filtered, proving the bypass is tied to the flag, not the price.
+    too_expensive_not_sale = {**VALID_DEAL, "deal_id": "d8", "myr_price": 379.0}
+
+    resp = client.post(
+        "/webhook/scraper-deal", json=too_expensive_not_sale, headers={"X-Apify-Secret": "test-apify-secret"}
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "filtered", "deal_id": "d8", "reason": "price_out_of_range"}
+
+
+@respx.mock
 def test_scraper_deal_returns_502_on_telegram_failure():
     respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
     respx.post("https://api.telegram.org/bottest-reviewer-token/sendPhoto").mock(

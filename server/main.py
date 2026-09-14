@@ -226,6 +226,19 @@ def _promo_note_line(promo_note: str | None) -> str:
     )
 
 
+def _sale_note_line(on_sale: bool) -> str:
+    """Like _promo_note_line: a disclaimer, not an applied discount. The
+    scraper only ever reads from URLs configured as "Sale page URLs" on the
+    Apify actor — on_sale reflects that page context, not a per-item
+    verified markdown, so it's always phrased as something to double-check."""
+    if not on_sale:
+        return ""
+    return (
+        "\U0001f3f7️ *Scraped from a sale page* — confirm the markdown is "
+        "real before honoring the price.\n\n"
+    )
+
+
 def _brand_line(product_title: str) -> str:
     """A "Brand:" caption line when the title names one of the brands the
     banner itself recognizes (image_engine.detect_brand) — empty otherwise,
@@ -245,6 +258,7 @@ async def _create_pending_deal_and_review_card(
     reviewer_bot: bots.TelegramBot,
     sheets: sheets_mod.SheetsClient,
     extra_note: str = "",
+    on_sale: bool = False,
 ) -> None:
     """Shared by the Apify webhook and the paste-a-link flow: save the
     pendingDeals row and send the reviewer the same postonly/createorder/
@@ -256,6 +270,7 @@ async def _create_pending_deal_and_review_card(
         "sizes": sizes,
         "image_url": image_url,
         "promo_note": promo_note or "",
+        "on_sale": on_sale,
         "status": "awaiting_review",
         "pending_action": "",
         "created_at": _now_iso(),
@@ -268,6 +283,7 @@ async def _create_pending_deal_and_review_card(
         f"\U0001f3f7️ *MYR Price:* {myr_price}\n"
         f"\U0001f45f *Sizes:* {bots.escape_markdown(sizes)}\n\n"
         f"{_promo_note_line(promo_note)}"
+        f"{_sale_note_line(on_sale)}"
         f"{extra_note}"
         "Select action:"
     )
@@ -287,6 +303,7 @@ def _build_caption(deal: dict, bdt_price: str) -> str:
         "\U0001f4e6 *Delivery:* 3-4 weeks, if lucky could be 2 weeks.\n"
         "\U0001f4cc We only deal with Authentic products.\n\n"
         f"{_promo_note_line(deal.get('promo_note'))}"
+        f"{_sale_note_line(bool(deal.get('on_sale')))}"
         "Inbox us to order | 30% Advance Required"
     )
 
@@ -335,9 +352,10 @@ def create_app(settings: Settings) -> FastAPI:
         if x_apify_secret != settings.apify_webhook_secret:
             raise HTTPException(status_code=403, detail="Invalid secret")
 
-        if not (DEAL_PRICE_MIN_MYR <= deal.myr_price <= DEAL_PRICE_MAX_MYR):
+        price_in_range = DEAL_PRICE_MIN_MYR <= deal.myr_price <= DEAL_PRICE_MAX_MYR
+        if not price_in_range and not deal.on_sale:
             logger.info(
-                "Filtered scraped deal %s: MYR %.2f outside review range %.0f-%.0f",
+                "Filtered scraped deal %s: MYR %.2f outside review range %.0f-%.0f and not on_sale",
                 deal.deal_id, deal.myr_price, DEAL_PRICE_MIN_MYR, DEAL_PRICE_MAX_MYR,
             )
             return {"status": "filtered", "deal_id": deal.deal_id, "reason": "price_out_of_range"}
@@ -353,6 +371,7 @@ def create_app(settings: Settings) -> FastAPI:
                 settings=settings,
                 reviewer_bot=reviewer_bot,
                 sheets=sheets,
+                on_sale=deal.on_sale,
             )
         except (bots.TelegramError, SheetsError) as exc:
             logger.exception("Failed to process scraped deal %s", deal.deal_id)
