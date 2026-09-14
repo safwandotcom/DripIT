@@ -119,6 +119,7 @@ async def _handle_message(
     match = _REF_PATTERN.search(reply_to_text)
 
     if match and text.isdigit():
+        logger.info("Recognized price reply in chat %s: deal=%s price=%s", chat_id, match.group(1), text)
         await _handle_price_reply(match.group(1), text, chat_id, settings, reviewer_bot, publisher_bot, sheets, background_tasks)
         return
 
@@ -150,15 +151,21 @@ async def _handle_price_reply(
     try:
         deal = await sheets.get_pending_deal(deal_id)
     except SheetsError:
+        logger.info("Price reply for deal %s: pendingDeals lookup failed (SheetsError)", deal_id)
         deal = None
 
     if deal is None or deal.get("status") != "awaiting_price":
+        logger.info(
+            "Price reply for deal %s rejected: status=%r (need awaiting_price)",
+            deal_id, deal.get("status") if deal else None,
+        )
         await reviewer_bot.send_message(chat_id, "⚠️ This deal was already processed or has expired.")
         return
 
     # Claim the row immediately, before any slow work, so a duplicate or
     # retried reply can't double-publish.
     deal = await sheets.update_pending_deal(deal_id, status="processing")
+    logger.info("Claimed deal %s, dispatching publish for %s BDT", deal_id, text)
     await reviewer_bot.send_message(chat_id, f"⏳ Rendering banner for {deal['title']} at {text} BDT...")
     background_tasks.add_task(_process_publish, deal, text, chat_id, settings, reviewer_bot, publisher_bot, sheets)
 
@@ -221,12 +228,15 @@ async def _process_publish(
     sheets: sheets_mod.SheetsClient,
 ) -> None:
     deal_id = deal["id"]
+    logger.info("Publishing deal %s at %s BDT: rendering banner", deal_id, bdt_price)
     try:
         image_bytes = await render_banner(
             product_title=deal["title"], image_url=deal["image_url"], price_text=bdt_price
         )
+        logger.info("Rendered banner for deal %s (%d bytes), publishing to chat %s", deal_id, len(image_bytes), settings.publish_chat_id)
         caption = _build_caption(deal, bdt_price)
         await publisher_bot.publish_photo(settings.publish_chat_id, image_bytes, caption)
+        logger.info("Published banner for deal %s to chat %s", deal_id, settings.publish_chat_id)
     except Exception as exc:
         logger.exception("Failed to render/publish banner for deal %s", deal_id)
         try:
@@ -246,6 +256,7 @@ async def _process_publish(
         if deal.get("pending_action") == "createorder":
             order_number = await sheets.next_order_number(settings.deal_brand)
             await sheets.append_order(_build_order_row(deal, bdt_price, order_number, settings.deal_brand))
+        logger.info("Deal %s bookkeeping complete (pending_action=%s)", deal_id, deal.get("pending_action"))
     except Exception as exc:
         logger.exception("Banner published but bookkeeping failed for deal %s", deal_id)
         await reviewer_bot.send_message(
