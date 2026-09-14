@@ -35,8 +35,15 @@ def _now_iso() -> str:
 
 def _is_allowed(settings: Settings, chat_id: int, user_id: int | None) -> bool:
     if chat_id != settings.telegram_chat_id:
+        logger.info(
+            "Ignoring message from chat %s — TELEGRAM_CHAT_ID is set to %s", chat_id, settings.telegram_chat_id
+        )
         return False
     if user_id is not None and user_id not in settings.telegram_allowed_user_ids:
+        logger.info(
+            "Ignoring message from user %s in chat %s — not in TELEGRAM_ALLOWED_USER_IDS %s",
+            user_id, chat_id, settings.telegram_allowed_user_ids,
+        )
         return False
     return True
 
@@ -121,8 +128,13 @@ async def _handle_message(
     if reply_to_message is None:
         url = _extract_url(text)
         if url:
+            logger.info("Recognized pasted link in chat %s: %s", chat_id, url)
             await reviewer_bot.send_message(chat_id, "🔎 Fetching that link, one moment...")
             background_tasks.add_task(_handle_link_paste, url, chat_id, settings, reviewer_bot, sheets)
+        else:
+            logger.info("Plain message in chat %s had no recognizable link: %r", chat_id, text[:200])
+    else:
+        logger.info("Reply message in chat %s matched neither a price reply nor a link paste", chat_id)
 
 
 async def _handle_price_reply(
@@ -158,12 +170,22 @@ async def _handle_link_paste(
     reviewer_bot: bots.TelegramBot,
     sheets: sheets_mod.SheetsClient,
 ) -> None:
+    logger.info("Scraping pasted link: %s", url)
     try:
         scraped = await scrape_product_link(url)
     except LinkScrapeError as exc:
+        logger.info("Link scrape failed for %s: %s", url, exc)
         await reviewer_bot.send_message(chat_id, f"⚠️ Couldn't build a deal from that link: {exc}")
         return
+    except Exception:
+        # Anything other than LinkScrapeError is a bug, not a user-facing
+        # "couldn't scrape this site" case — log it loudly and still tell
+        # the reviewer something happened, instead of failing silently.
+        logger.exception("Unexpected error scraping pasted link %s", url)
+        await reviewer_bot.send_message(chat_id, "⚠️ Something went wrong fetching that link. Try again?")
+        return
 
+    logger.info("Scraped %s from %s", scraped, url)
     deal_id = f"link-{uuid.uuid4().hex[:10]}"
     try:
         await _create_pending_deal_and_review_card(
@@ -181,6 +203,7 @@ async def _handle_link_paste(
                 "aren't verified. Double-check both before choosing an action.\n\n"
             ),
         )
+        logger.info("Created pending deal %s from pasted link %s", deal_id, url)
     except (bots.TelegramError, SheetsError) as exc:
         logger.exception("Failed to create pending deal from pasted link %s", url)
         await reviewer_bot.send_message(
