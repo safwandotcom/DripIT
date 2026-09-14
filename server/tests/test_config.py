@@ -50,3 +50,22 @@ def test_load_settings_raises_on_non_integer_allowed_ids():
     env["TELEGRAM_ALLOWED_USER_IDS"] = "111,not-a-number"
     with pytest.raises(ConfigError):
         load_settings(env)
+
+
+def test_load_settings_defaults_apify_fields_when_unset():
+    # Both are optional — the scheduled scrape and the httpx-based
+    # link-paste path work without either; only a JS-rendered-site link
+    # (Shein) needs a real token, and gets a clear runtime error rather
+    # than a startup crash when it's missing.
+    settings = load_settings(dict(BASE_ENV))
+    assert settings.apify_api_token == ""
+    assert settings.apify_actor_id == "fcnMsZfkFA4Xat1dU"
+
+
+def test_load_settings_reads_apify_fields_when_set():
+    env = dict(BASE_ENV)
+    env["APIFY_API_TOKEN"] = "apify-api-token"
+    env["APIFY_ACTOR_ID"] = "someOtherActorId"
+    settings = load_settings(env)
+    assert settings.apify_api_token == "apify-api-token"
+    assert settings.apify_actor_id == "someOtherActorId"

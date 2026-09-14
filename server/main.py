@@ -9,11 +9,13 @@ import logging
 import re
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 
 import bots
 import sheets_client as sheets_mod
+from apify_scraper import ApifyLinkScrapeError, scrape_product_link_via_apify
 from config import Settings, load_settings
 from image_engine import detect_brand, render_banner
 from link_scraper import LinkScrapeError, scrape_product_link
@@ -100,6 +102,22 @@ def _extract_url(text: str) -> str | None:
     return url
 
 
+# Hostnames whose product pages expose no data at all in a plain HTTP
+# response — the real title/image/price only exist after client-side JS
+# runs (confirmed against a live my.shein.com product page: zero Open Graph
+# tags, zero JSON-LD, a generic empty shell). link_scraper's httpx-based
+# fetch can never work here no matter what headers it sends, so these route
+# to the Apify actor's rendered-browser scrape instead.
+_JS_RENDERED_HOSTS = {"shein.com"}
+
+
+def _needs_rendered_browser(url: str) -> bool:
+    hostname = (urlparse(url).hostname or "").lower()
+    return hostname in _JS_RENDERED_HOSTS or any(
+        hostname.endswith(f".{host}") for host in _JS_RENDERED_HOSTS
+    )
+
+
 def _normalize_price_reply(text: str) -> str | None:
     """A price reply as a plain digit string, or None if `text` isn't one —
     strips thousand-separator commas and surrounding whitespace first, so
@@ -140,7 +158,13 @@ async def _handle_message(
         url = _extract_url(text)
         if url:
             logger.info("Recognized pasted link in chat %s: %s", chat_id, url)
-            await reviewer_bot.send_message(chat_id, "🔎 Fetching that link, one moment...")
+            ack = (
+                "🔎 Fetching that link — this site needs a rendered-browser scrape, "
+                "can take up to a minute..."
+                if _needs_rendered_browser(url)
+                else "🔎 Fetching that link, one moment..."
+            )
+            await reviewer_bot.send_message(chat_id, ack)
             background_tasks.add_task(_handle_link_paste, url, chat_id, settings, reviewer_bot, sheets)
         else:
             logger.info("Plain message in chat %s had no recognizable link: %r", chat_id, text[:200])
@@ -189,8 +213,12 @@ async def _handle_link_paste(
 ) -> None:
     logger.info("Scraping pasted link: %s", url)
     try:
-        scraped = await scrape_product_link(url)
-    except LinkScrapeError as exc:
+        if _needs_rendered_browser(url):
+            logger.info("Routing %s to the Apify actor (JS-rendered site)", url)
+            scraped = await scrape_product_link_via_apify(url, settings.apify_api_token, settings.apify_actor_id)
+        else:
+            scraped = await scrape_product_link(url)
+    except (LinkScrapeError, ApifyLinkScrapeError) as exc:
         logger.info("Link scrape failed for %s: %s", url, exc)
         await reviewer_bot.send_message(chat_id, f"⚠️ Couldn't build a deal from that link: {exc}")
         return

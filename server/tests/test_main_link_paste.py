@@ -174,6 +174,66 @@ def test_url_inside_a_reply_message_is_not_treated_as_a_link_paste():
 
 
 @respx.mock
+def test_pasted_shein_link_routes_to_apify_actor():
+    # Shein's product pages expose zero product data to a plain fetch (no
+    # OG tags, no JSON-LD — everything is injected by client-side JS), so a
+    # my.shein.com link must go through the Apify actor's rendered-browser
+    # scrape instead of link_scraper's httpx-based one.
+    run_sync_route = respx.post(
+        "https://api.apify.com/v2/acts/fcnMsZfkFA4Xat1dU/run-sync-get-dataset-items"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"title": "Sodalemon Chunky Sneakers", "image_url": "https://img.ltwebstatic.com/x.webp", "myr_price": 72.25}],
+        )
+    )
+    respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    ack_route = respx.post("https://api.telegram.org/bottest-reviewer-token/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+    card_route = respx.post("https://api.telegram.org/bottest-reviewer-token/sendPhoto").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    resp = client.post(
+        "/webhook/telegram-reviewer",
+        headers=SECRET_HEADERS,
+        json=_link_message_payload("https://my.shein.com/Sodalemon-Chunky-Sneakers-p-52898192.html"),
+    )
+
+    assert resp.status_code == 200
+    assert run_sync_route.called
+    assert ack_route.called
+    ack_text = json.loads(ack_route.calls[0].request.content)["text"]
+    assert "rendered-browser" in ack_text  # sets different expectations than the instant-reply path
+
+    assert card_route.called
+    sent = json.loads(card_route.calls.last.request.content)
+    assert sent["photo"] == "https://img.ltwebstatic.com/x.webp"
+    assert "Sodalemon Chunky Sneakers" in sent["caption"]
+
+
+@respx.mock
+def test_pasted_shein_link_reports_error_when_apify_run_fails():
+    respx.post("https://api.apify.com/v2/acts/fcnMsZfkFA4Xat1dU/run-sync-get-dataset-items").mock(
+        return_value=httpx.Response(500)
+    )
+    msg_route = respx.post("https://api.telegram.org/bottest-reviewer-token/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    resp = client.post(
+        "/webhook/telegram-reviewer",
+        headers=SECRET_HEADERS,
+        json=_link_message_payload("https://my.shein.com/Sodalemon-Chunky-Sneakers-p-52898192.html"),
+    )
+
+    assert resp.status_code == 200
+    error_texts = [json.loads(c.request.content)["text"] for c in msg_route.calls]
+    assert any("Couldn't build a deal" in t for t in error_texts)
+
+
+@respx.mock
 def test_non_url_plain_message_is_ignored():
     resp = client.post(
         "/webhook/telegram-reviewer",

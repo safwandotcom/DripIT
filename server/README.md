@@ -18,6 +18,8 @@ for the full design.
 | `APIFY_WEBHOOK_SECRET` | a random string you generate | Checked against the `X-Apify-Secret` header |
 | `SHEETS_URL` | the Apps Script Web App URL | Same URL DripIT's Export & Sync tab uses |
 | `DEAL_BRAND` | `drip_ittt` or `NOVUS` | Brand every scraped deal's order is attributed to |
+| `APIFY_API_TOKEN` | an Apify API token | Optional — only needed to paste links from JS-rendered sites (Shein). Console → Settings → Integrations. |
+| `APIFY_ACTOR_ID` | `fcnMsZfkFA4Xat1dU` | Optional — defaults to the existing sneaker-deal actor; override only for a different actor/account. |
 
 ## First-time setup
 
@@ -78,6 +80,24 @@ The extracted price's currency isn't verified and sizes aren't detected —
 the review card flags both for you to check before choosing an action, and
 the price-range filter above does **not** apply to pasted links (a link you
 deliberately paste isn't scraper noise to filter).
+
+**JS-rendered sites (Shein confirmed).** Some sites expose no product data
+at all to a plain fetch — not even Open Graph tags — because everything is
+injected by client-side JS after the page loads; no header or User-Agent
+trick fixes this, the data genuinely isn't in the HTTP response. A link
+whose host is `shein.com` or any subdomain (`my.shein.com` confirmed) is
+routed instead to the Apify actor (`apify_scraper.py`), which runs its own
+rendered browser against just that one URL via Apify's
+`run-sync-get-dataset-items` endpoint (`APIFY_API_TOKEN` /
+`APIFY_ACTOR_ID` env vars — the actor id defaults to the existing sneaker
+actor) and reads back the same schema.org JSON-LD product data the actor's
+own scheduled scrape already knows how to parse. This takes up to
+~30-60s (a real page load) instead of the instant reply other sites get,
+and without `APIFY_API_TOKEN` set it replies with a clear "not configured"
+message rather than crashing. To add another JS-rendered site later, add
+its host to `_JS_RENDERED_HOSTS` in `main.py` — the actor's `DIRECT_PRODUCT`
+handler is generic (any schema.org Product/ProductGroup JSON-LD), not
+Shein-specific.
 
 ## Manual smoke test (run once after every deploy)
 

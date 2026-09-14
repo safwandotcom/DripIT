@@ -28,6 +28,16 @@ class Settings:
     apify_webhook_secret: str
     sheets_url: str
     deal_brand: str
+    apify_api_token: str = ""
+    """Apify API token used to run the actor on-demand for a single pasted
+    link (JS-rendered sites like Shein, whose product data doesn't exist in
+    a plain HTTP response at all). Optional — the scheduled sale-page scrape
+    and the httpx-based link-paste path both work without it; only a pasted
+    link from a JS-rendered site needs it, and gets a clear "not configured"
+    error instead of a crash when it's missing."""
+    apify_actor_id: str = "fcnMsZfkFA4Xat1dU"
+    """The sneaker-deal-scraper actor's id (console.apify.com/actors/<id>).
+    Overridable via APIFY_ACTOR_ID for a different actor/account."""
 
     def __post_init__(self) -> None:
         if self.deal_brand not in VALID_BRANDS:
@@ -79,4 +89,6 @@ def load_settings(env: dict | None = None) -> Settings:
         apify_webhook_secret=_require(env, "APIFY_WEBHOOK_SECRET"),
         sheets_url=_require(env, "SHEETS_URL"),
         deal_brand=_require(env, "DEAL_BRAND"),
+        apify_api_token=(env.get("APIFY_API_TOKEN") or "").strip(),
+        apify_actor_id=(env.get("APIFY_ACTOR_ID") or "").strip() or "fcnMsZfkFA4Xat1dU",
     )
