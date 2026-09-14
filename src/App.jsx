@@ -4895,7 +4895,7 @@ function buildTelegramCardHTML({ photoDataUrl, productName, price }, company) {
   const phoneSvg = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.29 1.223 14 14 0 0 0 6.392 6.394"/></svg>`;
 
   return `
-    <div style="width:${NPM_CANVAS}px;height:${NPM_CANVAS}px;background:#FFFFFF;position:relative;overflow:hidden;">
+    <div style="width:${NPM_CANVAS}px;height:${NPM_CANVAS}px;background:#ECEFF1;position:relative;overflow:hidden;">
       <div style="position:absolute;left:70px;top:44px;font-family:'Archivo Black',sans-serif;font-size:26px;line-height:32px;color:${ink};letter-spacing:0.01em;">PRE-ORDER</div>
       <div style="position:absolute;left:70px;top:76px;font-family:'Archivo Black',sans-serif;font-size:26px;line-height:32px;color:${ink};letter-spacing:0.01em;">FROM MALAYSIA</div>
       <div style="position:absolute;right:70px;top:60px;font-family:'Alfa Slab One',serif;font-size:32px;color:${ink};">${company.displayName}</div>
@@ -4975,7 +4975,7 @@ function NewPostMaker({ company, showToast }) {
           document.fonts.ready.then(function() {
             html2canvas(document.getElementById("card"), {
               width: ${NPM_CANVAS}, height: ${NPM_CANVAS}, scale: 1,
-              useCORS: true, allowTaint: true, backgroundColor: '#FFFFFF', logging: false
+              useCORS: true, allowTaint: true, backgroundColor: '#ECEFF1', logging: false
             }).then(function(canvas) {
               var link = document.createElement("a");
               link.download = "${(form.productName || 'product').replace(/[^a-zA-Z0-9]/g, '_')}.png";
