@@ -246,6 +246,32 @@ def test_order_creation_failure_after_publish_does_not_revert_or_duplicate():
 
 
 @respx.mock
+def test_price_reply_with_thousand_separator_comma_is_recognized():
+    # Real failure mode: a reviewer typing a price this size naturally types
+    # "37,950" (with a comma). The old text.isdigit() check rejected that
+    # outright — silently, with no ack and no error — so the whole publish
+    # flow never triggered. The comma must be stripped before validation.
+    _mock_pending_deal("d1c", pending_action="postonly")
+    respx.get("https://x/i.jpg").mock(return_value=httpx.Response(200, content=_sample_png_bytes()))
+    respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    respx.post("https://api.telegram.org/bottest-reviewer-token/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+    publish_route = respx.post("https://api.telegram.org/bottest-publisher-token/sendPhoto").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    resp = client.post(
+        "/webhook/telegram-reviewer", headers=SECRET_HEADERS, json=_price_reply_payload("d1c", "37,950")
+    )
+
+    assert resp.status_code == 200
+    assert publish_route.called
+    # The banner/caption should carry the price with the comma stripped.
+    assert b"37950" in publish_route.calls.last.request.content
+
+
+@respx.mock
 def test_non_reply_message_is_ignored():
     resp = client.post(
         "/webhook/telegram-reviewer",

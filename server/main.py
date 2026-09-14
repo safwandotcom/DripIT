@@ -100,6 +100,15 @@ def _extract_url(text: str) -> str | None:
     return url
 
 
+def _normalize_price_reply(text: str) -> str | None:
+    """A price reply as a plain digit string, or None if `text` isn't one —
+    strips thousand-separator commas and surrounding whitespace first, so
+    "37,950" (the natural way to type a price this size) isn't rejected the
+    same way a genuinely non-numeric reply should be."""
+    cleaned = text.strip().replace(",", "")
+    return cleaned if cleaned.isdigit() else None
+
+
 async def _handle_message(
     msg: dict,
     settings: Settings,
@@ -117,10 +126,11 @@ async def _handle_message(
     reply_to_message = msg.get("reply_to_message")
     reply_to_text = (reply_to_message or {}).get("text", "")
     match = _REF_PATTERN.search(reply_to_text)
+    price = _normalize_price_reply(text) if match else None
 
-    if match and text.isdigit():
-        logger.info("Recognized price reply in chat %s: deal=%s price=%s", chat_id, match.group(1), text)
-        await _handle_price_reply(match.group(1), text, chat_id, settings, reviewer_bot, publisher_bot, sheets, background_tasks)
+    if price is not None:
+        logger.info("Recognized price reply in chat %s: deal=%s price=%s (raw %r)", chat_id, match.group(1), price, text)
+        await _handle_price_reply(match.group(1), price, chat_id, settings, reviewer_bot, publisher_bot, sheets, background_tasks)
         return
 
     # A plain (non-reply) message containing a URL anywhere in it: treat it
