@@ -10,6 +10,7 @@ from image_engine import (
     ImageRenderError,
     _crop_to_opaque_bbox,
     _key_out_flat_background,
+    _resize_to_fit,
     _simplify_title,
     detect_brand,
     render_banner,
@@ -131,6 +132,23 @@ def test_simplify_title_falls_back_to_original_when_nothing_is_left():
     # A pathological title that's *only* boilerplate shouldn't simplify to
     # an empty string — keep whatever's left over the delimiter cut instead.
     assert _simplify_title("Shoes") == "Shoes"
+
+
+def test_resize_to_fit_enlarges_a_small_image_to_fill_the_box():
+    # The real bug: a product photo cropped tight to its own silhouette is
+    # often smaller than the banner's photo frame. Image.thumbnail() (the
+    # old approach) only ever shrinks, leaving a small source image small —
+    # _resize_to_fit must scale it UP to actually fill the given box.
+    img = Image.new("RGBA", (200, 100), (10, 10, 10, 255))  # 2:1, smaller than the box
+    result = _resize_to_fit(img, 800, 500)
+    # Width-bound: 800/200 = 4.0 scale (400 > 500 stays within height budget)
+    assert result.size == (800, 400)
+
+
+def test_resize_to_fit_still_shrinks_an_oversized_image():
+    img = Image.new("RGBA", (2000, 1000), (10, 10, 10, 255))
+    result = _resize_to_fit(img, 800, 500)
+    assert result.size == (800, 400)
 
 
 def test_crop_to_opaque_bbox_removes_transparent_margin():

@@ -265,6 +265,21 @@ def _key_out_flat_background(img: Image.Image, low: int = 12, high: int = 40) ->
     return result
 
 
+def _resize_to_fit(img: Image.Image, max_width: int, max_height: int) -> Image.Image:
+    """Scales `img` to fill as much of a max_width x max_height box as
+    its aspect ratio allows, scaling UP as well as down. Image.thumbnail()
+    (the previous approach) only ever shrinks — a product photo cropped
+    tight to its own silhouette is very often already smaller than the
+    banner's photo frame, and thumbnail() leaves an image like that at its
+    original small size instead of enlarging it to fill the space."""
+    w, h = img.size
+    if w <= 0 or h <= 0:
+        return img
+    scale = min(max_width / w, max_height / h)
+    new_size = (max(1, round(w * scale)), max(1, round(h * scale)))
+    return img.resize(new_size, Image.Resampling.LANCZOS)
+
+
 def _crop_to_opaque_bbox(img: Image.Image, alpha_threshold: int = 10) -> Image.Image:
     """Crops away the transparent margin left around the product after
     keying out its background. Without this, a catalog photo shot with
@@ -320,8 +335,8 @@ async def render_banner(
     frame_box = (90, 158, 990, 660)
 
     pad = 16
-    product_img.thumbnail(
-        (frame_box[2] - frame_box[0] - pad * 2, frame_box[3] - frame_box[1] - pad * 2), Image.Resampling.LANCZOS
+    product_img = _resize_to_fit(
+        product_img, frame_box[2] - frame_box[0] - pad * 2, frame_box[3] - frame_box[1] - pad * 2
     )
     p_width, p_height = product_img.size
     p_x = (CANVAS_SIZE[0] - p_width) // 2
