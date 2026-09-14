@@ -5,7 +5,15 @@ import pytest
 import respx
 from PIL import Image
 
-from image_engine import CANVAS_SIZE, ImageRenderError, _key_out_flat_background, detect_brand, render_banner
+from image_engine import (
+    CANVAS_SIZE,
+    ImageRenderError,
+    _crop_to_opaque_bbox,
+    _key_out_flat_background,
+    _simplify_title,
+    detect_brand,
+    render_banner,
+)
 
 
 def _sample_png_bytes() -> bytes:
@@ -102,6 +110,47 @@ def test_key_out_flat_background_leaves_busy_photo_fully_opaque():
 
     assert result.getpixel((50, 50))[3] == 255
     assert result.getpixel((99, 99))[3] == 255
+
+
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        ("Nike Pegasus Plus 2", "Nike Pegasus Plus 2"),  # already short — untouched
+        ("Nike Air Zoom Pegasus Plus 2 Men's Road Running Shoes", "Nike Air Zoom Pegasus Plus 2"),
+        ("Nike Air Max 90 - Men's Shoes", "Nike Air Max 90"),
+        ("Nike Air Max 90 | Nike MY", "Nike Air Max 90"),
+        ("Under Armour HOVR Phantom, Black/White, US 10", "Under Armour HOVR Phantom"),
+        ("Puma Suede Classic Sneakers", "Puma Suede Classic"),
+    ],
+)
+def test_simplify_title_drops_retailer_boilerplate(title, expected):
+    assert _simplify_title(title) == expected
+
+
+def test_simplify_title_falls_back_to_original_when_nothing_is_left():
+    # A pathological title that's *only* boilerplate shouldn't simplify to
+    # an empty string — keep whatever's left over the delimiter cut instead.
+    assert _simplify_title("Shoes") == "Shoes"
+
+
+def test_crop_to_opaque_bbox_removes_transparent_margin():
+    # A product photo with generous blank margin around a small opaque
+    # "product" square — after keying + cropping, the crop should hug the
+    # opaque region rather than keep the surrounding transparent padding.
+    img = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
+    for x in range(80, 120):
+        for y in range(80, 120):
+            img.putpixel((x, y), (10, 10, 10, 255))
+
+    result = _crop_to_opaque_bbox(img)
+
+    assert result.size == (40, 40)
+
+
+def test_crop_to_opaque_bbox_returns_original_when_fully_transparent():
+    img = Image.new("RGBA", (50, 60), (0, 0, 0, 0))
+    result = _crop_to_opaque_bbox(img)
+    assert result.size == (50, 60)
 
 
 def test_key_out_flat_background_never_increases_existing_transparency():

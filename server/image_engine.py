@@ -53,6 +53,29 @@ def detect_brand(product_title: str) -> str | None:
     return None
 
 
+# A scraped/pasted product title is a full catalog listing title, not the
+# short name a banner should show (e.g. "Nike Air Zoom Pegasus Plus 2 -
+# Men's Road Running Shoes" instead of just "Nike Pegasus Plus 2"). Two
+# passes clean it up for display: cut at the first delimiter a retailer
+# uses to append trailing category/color/size text, then strip a leftover
+# trailing gender+category phrase for titles with no delimiter at all.
+_TITLE_DELIMITER_PATTERN = re.compile(r"\s+[-|]\s+|,\s*")
+_TITLE_TRAILING_NOISE_PATTERN = re.compile(
+    r"\s+(?:for\s+)?(?:men'?s?|women'?s?|kids?'?|unisex)?\s*(?:road\s+)?(?:running\s+)?"
+    r"(?:shoes?|sneakers?|trainers?|footwear)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _simplify_title(title: str) -> str:
+    """Trims retailer boilerplate from a scraped product title for banner
+    display. Falls back to the original (or the delimiter-cut) title if a
+    step would otherwise leave nothing."""
+    cut = _TITLE_DELIMITER_PATTERN.split(title, maxsplit=1)[0].strip() or title.strip()
+    trimmed = _TITLE_TRAILING_NOISE_PATTERN.sub("", cut).strip()
+    return trimmed or cut
+
+
 class ImageRenderError(RuntimeError):
     """Raised when the product image can't be downloaded or decoded."""
 
@@ -242,6 +265,22 @@ def _key_out_flat_background(img: Image.Image, low: int = 12, high: int = 40) ->
     return result
 
 
+def _crop_to_opaque_bbox(img: Image.Image, alpha_threshold: int = 10) -> Image.Image:
+    """Crops away the transparent margin left around the product after
+    keying out its background. Without this, a catalog photo shot with
+    generous whitespace around the shoe (common — the keyed-out background
+    is transparent, but the image's own pixel dimensions still include that
+    empty margin) gets scaled down to fit that unused space too, leaving
+    the product itself looking small on the banner. Cropping to the
+    product's own bounding box first means the fit-to-frame scale step
+    below is sized to the product, not to however much blank margin the
+    source photo happened to ship with."""
+    alpha = img.split()[-1]
+    mask = alpha.point(lambda a: 255 if a > alpha_threshold else 0)
+    bbox = mask.getbbox()
+    return img.crop(bbox) if bbox else img
+
+
 async def render_banner(
     product_title: str,
     image_url: str,
@@ -262,6 +301,7 @@ async def render_banner(
             await client.aclose()
 
     product_img = _key_out_flat_background(product_img)
+    product_img = _crop_to_opaque_bbox(product_img)
 
     canvas = Image.new("RGB", CANVAS_SIZE, color=_PAPER)
     draw = ImageDraw.Draw(canvas)
@@ -273,11 +313,13 @@ async def render_banner(
     draw.text((70, 94), "FROM MALAYSIA", font=font_header, fill=_INK, anchor="lm")
     draw.text((1010, 78), _HANDLE, font=font_brand, fill=_INK, anchor="rm")
 
-    # Product photo, framed in a bordered box, with a soft drop shadow.
+    # Product photo area — no border box (dropped per the owner's request
+    # for a cleaner look) — with a soft drop shadow. A tighter pad now that
+    # there's no frame line to keep clear of, so the product fills more of
+    # the space instead of floating small in the middle of it.
     frame_box = (90, 158, 990, 660)
-    draw.rounded_rectangle(list(frame_box), radius=18, outline=_INK, width=3)
 
-    pad = 40
+    pad = 16
     product_img.thumbnail(
         (frame_box[2] - frame_box[0] - pad * 2, frame_box[3] - frame_box[1] - pad * 2), Image.Resampling.LANCZOS
     )
@@ -298,7 +340,7 @@ async def render_banner(
 
     # Product name, then price, centered beneath the frame.
     font_title = _font("ArchivoBlack-Regular.ttf", 34)
-    title = _fit_text(draw, product_title.upper(), font_title, 900)
+    title = _fit_text(draw, _simplify_title(product_title).upper(), font_title, 900)
     draw.text((CANVAS_SIZE[0] // 2, 710), title, font=font_title, fill=_INK, anchor="mm")
 
     _draw_price(draw, CANVAS_SIZE[0] / 2, 782, 900, price_text)
