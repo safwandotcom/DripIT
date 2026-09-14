@@ -79,6 +79,28 @@ def test_price_reply_publishes_and_creates_order_for_createorder_action():
 
 
 @respx.mock
+def test_price_reply_includes_promo_note_in_published_caption():
+    _mock_pending_deal("d1b", pending_action="postonly", promo_note="Buy 3 at 20% Off Sitewide")
+    respx.get("https://x/i.jpg").mock(return_value=httpx.Response(200, content=_sample_png_bytes()))
+    respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    respx.post("https://api.telegram.org/bottest-reviewer-token/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+    publish_route = respx.post("https://api.telegram.org/bottest-publisher-token/sendPhoto").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    resp = client.post(
+        "/webhook/telegram-reviewer", headers=SECRET_HEADERS, json=_price_reply_payload("d1b", "6500")
+    )
+
+    assert resp.status_code == 200
+    caption_bytes = publish_route.calls.last.request.content
+    assert b"Buy 3 at 20" in caption_bytes and b"Off Sitewide" in caption_bytes
+    assert b"Confirm this item actually qualifies" in caption_bytes
+
+
+@respx.mock
 def test_price_reply_post_only_does_not_create_order():
     _mock_pending_deal("d2", pending_action="postonly")
     respx.get("https://x/i.jpg").mock(return_value=httpx.Response(200, content=_sample_png_bytes()))

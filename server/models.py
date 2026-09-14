@@ -13,6 +13,10 @@ class ScraperDeal(BaseModel):
     myr_price: float
     sizes: str
     image_url: str
+    promo_note: str | None = None
+    """Optional site-wide promo/condition text captured at scrape time (e.g.
+    "Buy 3 at 20% Off Sitewide"). Not a per-item guarantee — surfaced to the
+    reviewer and the published caption as a disclaimer, not applied to price."""
 
     @field_validator("myr_price", mode="before")
     @classmethod

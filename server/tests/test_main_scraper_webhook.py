@@ -63,6 +63,43 @@ def test_scraper_deal_creates_pending_row_and_sends_review_card():
 
 
 @respx.mock
+def test_scraper_deal_includes_promo_note_in_review_card():
+    save_route = respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    send_route = respx.post("https://api.telegram.org/bottest-reviewer-token/sendPhoto").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    deal_with_promo = {**VALID_DEAL, "deal_id": "d2", "promo_note": "Buy 3 at 20% Off Sitewide"}
+    resp = client.post(
+        "/webhook/scraper-deal", json=deal_with_promo, headers={"X-Apify-Secret": "test-apify-secret"}
+    )
+
+    assert resp.status_code == 200
+    saved = json.loads(save_route.calls.last.request.content)
+    assert saved["data"]["promo_note"] == "Buy 3 at 20% Off Sitewide"
+
+    sent = json.loads(send_route.calls.last.request.content)
+    assert "Buy 3 at 20% Off Sitewide" in sent["caption"]
+    assert "Confirm this item actually qualifies" in sent["caption"]
+
+
+@respx.mock
+def test_scraper_deal_without_promo_note_omits_disclaimer():
+    respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    send_route = respx.post("https://api.telegram.org/bottest-reviewer-token/sendPhoto").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    resp = client.post(
+        "/webhook/scraper-deal", json=VALID_DEAL, headers={"X-Apify-Secret": "test-apify-secret"}
+    )
+
+    assert resp.status_code == 200
+    sent = json.loads(send_route.calls.last.request.content)
+    assert "Site promo at scrape time" not in sent["caption"]
+
+
+@respx.mock
 def test_scraper_deal_returns_502_on_telegram_failure():
     respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
     respx.post("https://api.telegram.org/bottest-reviewer-token/sendPhoto").mock(

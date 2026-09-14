@@ -37,6 +37,19 @@ def test_scraper_deal_rejects_deal_id_too_long():
         )
 
 
+def test_scraper_deal_promo_note_defaults_to_none():
+    deal = ScraperDeal(deal_id="d1", title="X", myr_price=1, sizes="1", image_url="https://x/i.jpg")
+    assert deal.promo_note is None
+
+
+def test_scraper_deal_accepts_promo_note():
+    deal = ScraperDeal(
+        deal_id="d1", title="X", myr_price=1, sizes="1", image_url="https://x/i.jpg",
+        promo_note="Buy 3 at 20% Off Sitewide",
+    )
+    assert deal.promo_note == "Buy 3 at 20% Off Sitewide"
+
+
 def test_pending_action_constants_match_callback_data_values():
     assert PENDING_ACTIONS == ("postonly", "createorder")
     assert "awaiting_price" in PENDING_STATUSES

@@ -149,6 +149,18 @@ async def _process_publish(
         )
 
 
+def _promo_note_line(promo_note: str | None) -> str:
+    """A disclaimer line for a scraped site-wide promo condition (e.g. "Buy 3
+    at 20% Off Sitewide") — not a verified per-item guarantee, so it's always
+    phrased as something to double-check, never as an applied discount."""
+    if not promo_note:
+        return ""
+    return (
+        f"ℹ️ *Site promo at scrape time:* \"{bots.escape_markdown(promo_note)}\"\n"
+        "_Confirm this item actually qualifies before honoring the price._\n\n"
+    )
+
+
 def _build_caption(deal: dict, bdt_price: str) -> str:
     title = bots.escape_markdown(deal["title"])
     sizes = bots.escape_markdown(deal["sizes"])
@@ -160,6 +172,7 @@ def _build_caption(deal: dict, bdt_price: str) -> str:
         f"\U0001f45f *Available Sizes:* {sizes}\n"
         "\U0001f4e6 *Delivery:* 3-4 weeks, if lucky could be 2 weeks.\n"
         "\U0001f4cc We only deal with Authentic products.\n\n"
+        f"{_promo_note_line(deal.get('promo_note'))}"
         "Inbox us to order | 30% Advance Required"
     )
 
@@ -214,6 +227,7 @@ def create_app(settings: Settings) -> FastAPI:
                 "myr_price": deal.myr_price,
                 "sizes": deal.sizes,
                 "image_url": deal.image_url,
+                "promo_note": deal.promo_note or "",
                 "status": "awaiting_review",
                 "pending_action": "",
                 "created_at": _now_iso(),
@@ -224,6 +238,7 @@ def create_app(settings: Settings) -> FastAPI:
                 f"\U0001f45f *Item:* {bots.escape_markdown(deal.title)}\n"
                 f"\U0001f3f7️ *MYR Price:* {deal.myr_price}\n"
                 f"\U0001f45f *Sizes:* {bots.escape_markdown(deal.sizes)}\n\n"
+                f"{_promo_note_line(deal.promo_note)}"
                 "Select action:"
             )
             await reviewer_bot.send_review_card(

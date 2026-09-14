@@ -4978,7 +4978,7 @@ const HEADERS = {
   invoices: ['id','invoiceNumber','date','subtotal','discount','total'],
   accounts: ['id','name','type','currency','openingBalance'],
   counters: ['id','orderSeq','invoiceSeq','receiptSeq'],
-  pendingDeals: ['id','title','myr_price','sizes','image_url','status','pending_action','created_at'],
+  pendingDeals: ['id','title','myr_price','sizes','image_url','status','pending_action','created_at','promo_note'],
 };
 
 function getSheet(entity) {
