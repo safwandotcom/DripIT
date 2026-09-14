@@ -104,11 +104,24 @@ def _extract_url(text: str) -> str | None:
 
 # Hostnames whose product pages expose no data at all in a plain HTTP
 # response — the real title/image/price only exist after client-side JS
-# runs (confirmed against a live my.shein.com product page: zero Open Graph
-# tags, zero JSON-LD, a generic empty shell). link_scraper's httpx-based
-# fetch can never work here no matter what headers it sends, so these route
-# to the Apify actor's rendered-browser scrape instead.
-_JS_RENDERED_HOSTS = {"shein.com"}
+# runs. link_scraper's httpx-based fetch can never work here no matter what
+# headers it sends, so these route to the Apify actor's rendered-browser
+# scrape instead (apify_scraper.py + the actor's DIRECT_PRODUCT handler,
+# which works generically for any site exposing schema.org JSON-LD once
+# rendered — nothing here is Shein-specific).
+#
+# Empty for now. Shein was the only candidate tried and it doesn't
+# actually work: confirmed live that its anti-bot system doesn't block the
+# automated browser outright (unlike adidas's plain 403) but instead
+# silently serves decoy content — a generic page (homepage title,
+# unrelated body text) instead of the real product page, so the render
+# "succeeds" but there's never real data to find. Every attempt costs real
+# Apify compute for a guaranteed failure, so shein.com is deliberately not
+# listed here — a plain Shein link falls through to link_scraper instead,
+# which fails the same way (no product data) but instantly and for free.
+# Add a host here only once a live Apify run has been confirmed to
+# actually return real JSON-LD for it.
+_JS_RENDERED_HOSTS: set[str] = set()
 
 
 def _needs_rendered_browser(url: str) -> bool:

@@ -4,6 +4,7 @@ import httpx
 import respx
 from fastapi.testclient import TestClient
 
+import main
 from main import app
 
 client = TestClient(app)
@@ -174,11 +175,13 @@ def test_url_inside_a_reply_message_is_not_treated_as_a_link_paste():
 
 
 @respx.mock
-def test_pasted_shein_link_routes_to_apify_actor():
-    # Shein's product pages expose zero product data to a plain fetch (no
-    # OG tags, no JSON-LD — everything is injected by client-side JS), so a
-    # my.shein.com link must go through the Apify actor's rendered-browser
-    # scrape instead of link_scraper's httpx-based one.
+def test_pasted_link_on_a_registered_js_rendered_host_routes_to_apify_actor(monkeypatch):
+    # _JS_RENDERED_HOSTS is empty by default (see main.py — Shein was tried
+    # and doesn't actually work: its anti-bot system serves decoy content
+    # rather than failing outright, so it's deliberately not listed). This
+    # test exercises the routing mechanism itself via a synthetic host,
+    # independent of which real sites are currently listed.
+    monkeypatch.setattr(main, "_JS_RENDERED_HOSTS", {"js-rendered-test.example.com"})
     run_sync_route = respx.post(
         "https://api.apify.com/v2/acts/fcnMsZfkFA4Xat1dU/run-sync-get-dataset-items"
     ).mock(
@@ -198,7 +201,7 @@ def test_pasted_shein_link_routes_to_apify_actor():
     resp = client.post(
         "/webhook/telegram-reviewer",
         headers=SECRET_HEADERS,
-        json=_link_message_payload("https://my.shein.com/Sodalemon-Chunky-Sneakers-p-52898192.html"),
+        json=_link_message_payload("https://js-rendered-test.example.com/product-p-1.html"),
     )
 
     assert resp.status_code == 200
@@ -214,7 +217,8 @@ def test_pasted_shein_link_routes_to_apify_actor():
 
 
 @respx.mock
-def test_pasted_shein_link_reports_error_when_apify_run_fails():
+def test_pasted_link_on_a_registered_js_rendered_host_reports_error_when_apify_run_fails(monkeypatch):
+    monkeypatch.setattr(main, "_JS_RENDERED_HOSTS", {"js-rendered-test.example.com"})
     respx.post("https://api.apify.com/v2/acts/fcnMsZfkFA4Xat1dU/run-sync-get-dataset-items").mock(
         return_value=httpx.Response(500)
     )
@@ -225,10 +229,41 @@ def test_pasted_shein_link_reports_error_when_apify_run_fails():
     resp = client.post(
         "/webhook/telegram-reviewer",
         headers=SECRET_HEADERS,
-        json=_link_message_payload("https://my.shein.com/Sodalemon-Chunky-Sneakers-p-52898192.html"),
+        json=_link_message_payload("https://js-rendered-test.example.com/product-p-1.html"),
     )
 
     assert resp.status_code == 200
+    error_texts = [json.loads(c.request.content)["text"] for c in msg_route.calls]
+    assert any("Couldn't build a deal" in t for t in error_texts)
+
+
+@respx.mock
+def test_pasted_shein_link_uses_the_free_instant_path_not_apify():
+    # Deliberate: confirmed live that Shein's anti-bot system serves decoy
+    # content to the Apify actor's rendered browser rather than failing
+    # outright, so every attempt would cost real Apify compute for a
+    # guaranteed failure. shein.com is not in _JS_RENDERED_HOSTS (see
+    # main.py) so it falls through to link_scraper's plain fetch instead —
+    # same "no product data" outcome, but instant and free. This test
+    # guards against shein.com being re-added without that tradeoff being
+    # reconsidered.
+    respx.get("https://my.shein.com/some-product-p-1.html").mock(
+        return_value=httpx.Response(200, content=b"<html><body>nothing here</body></html>")
+    )
+    msg_route = respx.post("https://api.telegram.org/bottest-reviewer-token/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    resp = client.post(
+        "/webhook/telegram-reviewer",
+        headers=SECRET_HEADERS,
+        json=_link_message_payload("https://my.shein.com/some-product-p-1.html"),
+    )
+
+    assert resp.status_code == 200
+    # respx has no mock registered for api.apify.com in this test — if the
+    # code routed there, this request would raise inside respx and the
+    # response would never reach the assertions below at all.
     error_texts = [json.loads(c.request.content)["text"] for c in msg_route.calls]
     assert any("Couldn't build a deal" in t for t in error_texts)
 

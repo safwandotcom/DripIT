@@ -81,23 +81,39 @@ the review card flags both for you to check before choosing an action, and
 the price-range filter above does **not** apply to pasted links (a link you
 deliberately paste isn't scraper noise to filter).
 
-**JS-rendered sites (Shein confirmed).** Some sites expose no product data
-at all to a plain fetch — not even Open Graph tags — because everything is
-injected by client-side JS after the page loads; no header or User-Agent
-trick fixes this, the data genuinely isn't in the HTTP response. A link
-whose host is `shein.com` or any subdomain (`my.shein.com` confirmed) is
-routed instead to the Apify actor (`apify_scraper.py`), which runs its own
+**JS-rendered sites — infrastructure exists, no site currently enabled.**
+Some sites expose no product data at all to a plain fetch — not even Open
+Graph tags — because everything is injected by client-side JS after the
+page loads; no header or User-Agent trick fixes this, the data genuinely
+isn't in the HTTP response. For a site like that, a link can be routed
+instead to the Apify actor (`apify_scraper.py`), which runs its own
 rendered browser against just that one URL via Apify's
-`run-sync-get-dataset-items` endpoint (`APIFY_API_TOKEN` /
-`APIFY_ACTOR_ID` env vars — the actor id defaults to the existing sneaker
-actor) and reads back the same schema.org JSON-LD product data the actor's
-own scheduled scrape already knows how to parse. This takes up to
-~30-60s (a real page load) instead of the instant reply other sites get,
-and without `APIFY_API_TOKEN` set it replies with a clear "not configured"
-message rather than crashing. To add another JS-rendered site later, add
-its host to `_JS_RENDERED_HOSTS` in `main.py` — the actor's `DIRECT_PRODUCT`
-handler is generic (any schema.org Product/ProductGroup JSON-LD), not
-Shein-specific.
+`run-sync-get-dataset-items` endpoint (`APIFY_API_TOKEN` / `APIFY_ACTOR_ID`
+env vars — the actor id defaults to the existing sneaker actor) and reads
+back the same schema.org JSON-LD product data the actor's own scheduled
+scrape already knows how to parse (`DIRECT_PRODUCT` handler — generic,
+works for any site exposing Product/ProductGroup JSON-LD once rendered,
+not tied to any one site). This takes ~30-90s (a real page load) instead
+of the instant reply other sites get, and without `APIFY_API_TOKEN` set it
+replies with a clear "not configured" message rather than crashing.
+
+**Shein tried, doesn't work — known limitation.** `my.shein.com` was the
+first candidate and was fully wired up and tested live, but its anti-bot
+system doesn't fail outright like adidas's plain 403 — it silently serves
+**decoy content** to the automated browser instead: a generic page (the
+site's homepage title, unrelated body text like "Pregnant Dress For
+Women") rather than the real product page, confirmed via a debug
+screenshot the actor captured mid-run. The render "succeeds" (200 OK, a
+real-looking page) but there's never real product data to find, so every
+attempt burns real Apify compute for a guaranteed failure. Getting past
+this would need real anti-bot evasion (residential proxies, session/cookie
+warming) with no guarantee of success — judged not worth it for now.
+Accordingly, `_JS_RENDERED_HOSTS` in `main.py` is **empty by default** —
+`shein.com` is deliberately not listed, so a pasted Shein link falls
+through to `link_scraper`'s plain fetch instead, which fails the same way
+(no product data found) but instantly and for free instead of slowly and
+at a cost. Add a host here only once a live Apify run has actually
+confirmed real JSON-LD comes back for it.
 
 ## Manual smoke test (run once after every deploy)
 
