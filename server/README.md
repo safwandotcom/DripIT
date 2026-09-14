@@ -65,12 +65,15 @@ independent of whatever price filtering the Apify actor itself does.
 ## Paste-a-link deals
 
 Sending the reviewer bot a plain message that's just a product URL (not a
-reply to anything) fetches that page's Open Graph tags (`og:title`,
-`og:image`, `product:price:amount`/`og:price:amount`) and creates the same
-review card a scraped deal would — useful for a specific item you want to
-post without waiting on the scraper. Works well on big retail sites (Nike,
-adidas, Foot Locker, most Shopify/WooCommerce stores); a site that doesn't
-expose those tags gets a reply naming what's missing instead of a guess.
+reply to anything) fetches that page's product data — Open Graph tags
+(`og:title`, `og:image`, `product:price:amount`/`og:price:amount`) first,
+falling back to schema.org Product/Offer JSON-LD for whatever's still
+missing (verified against real underarmour.com.my and nike.com product
+pages, including Nike's nested `hasVariant` shape) — and creates the same
+review card a scraped deal would. A site whose bot protection blocks plain
+HTTP fetches outright (adidas.com, confirmed) won't work no matter which
+tags it exposes; anything else that exposes neither shape gets a reply
+naming what's missing instead of a guess.
 The extracted price's currency isn't verified and sizes aren't detected —
 the review card flags both for you to check before choosing an action, and
 the price-range filter above does **not** apply to pasted links (a link you
