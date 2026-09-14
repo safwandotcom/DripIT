@@ -5,7 +5,7 @@ import pytest
 import respx
 from PIL import Image
 
-from image_engine import CANVAS_SIZE, ImageRenderError, render_banner
+from image_engine import CANVAS_SIZE, ImageRenderError, detect_brand, render_banner
 
 
 def _sample_png_bytes() -> bytes:
@@ -44,3 +44,26 @@ async def test_render_banner_raises_on_unparseable_image():
 
     with pytest.raises(ImageRenderError):
         await render_banner("Air Max 90", "https://cdn.example.com/notanimage.jpg", "7600")
+
+
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        ("Nike Air Max 90", "Nike"),
+        ("adidas Ultraboost 22", "Adidas"),
+        ("PUMA Suede Classic", "Puma"),
+        ("Under Armour HOVR Phantom", "Under Armour"),
+        ("Under-Armour Curry Flow", "Under Armour"),
+    ],
+)
+def test_detect_brand_matches_known_brands_case_insensitively(title, expected):
+    assert detect_brand(title) == expected
+
+
+def test_detect_brand_returns_none_for_unrecognized_brand():
+    assert detect_brand("New Balance 990v6") is None
+
+
+def test_detect_brand_does_not_match_substring_inside_another_word():
+    # "Pumas" should not fire the Puma brand mark — \b keeps this a whole-word match.
+    assert detect_brand("Pumas Energy Drink Cooler") is None

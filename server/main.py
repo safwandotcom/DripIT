@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
@@ -14,11 +15,18 @@ from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 import bots
 import sheets_client as sheets_mod
 from config import Settings, load_settings
-from image_engine import render_banner
+from image_engine import detect_brand, render_banner
+from link_scraper import LinkScrapeError, scrape_product_link
 from models import PENDING_ACTIONS, ScraperDeal
 from sheets_client import SheetsError
 
 logger = logging.getLogger("sneaker_pipeline")
+
+# Deals outside this range never reach the reviewer at all — a cheap
+# safety net regardless of whatever price filtering (or lack of it) the
+# upstream Apify actor itself does.
+DEAL_PRICE_MIN_MYR = 0.0
+DEAL_PRICE_MAX_MYR = 200.0
 
 
 def _now_iso() -> str:
@@ -68,6 +76,7 @@ async def _handle_callback(
 
 
 _REF_PATTERN = re.compile(r"\[REF:([^\]]+)\]")
+_URL_PATTERN = re.compile(r"^https?://\S+$", re.IGNORECASE)
 
 
 async def _handle_message(
@@ -84,12 +93,31 @@ async def _handle_message(
         return
 
     text = (msg.get("text") or "").strip()
-    reply_to_text = msg.get("reply_to_message", {}).get("text", "")
+    reply_to_message = msg.get("reply_to_message")
+    reply_to_text = (reply_to_message or {}).get("text", "")
     match = _REF_PATTERN.search(reply_to_text)
-    if not match or not text.isdigit():
+
+    if match and text.isdigit():
+        await _handle_price_reply(match.group(1), text, chat_id, settings, reviewer_bot, publisher_bot, sheets, background_tasks)
         return
 
-    deal_id = match.group(1)
+    # A plain (non-reply) message that's just a URL: treat it as "build a
+    # deal from this product page" rather than requiring it come from Apify.
+    if reply_to_message is None and _URL_PATTERN.match(text):
+        await reviewer_bot.send_message(chat_id, "🔎 Fetching that link, one moment...")
+        background_tasks.add_task(_handle_link_paste, text, chat_id, settings, reviewer_bot, sheets)
+
+
+async def _handle_price_reply(
+    deal_id: str,
+    text: str,
+    chat_id: int,
+    settings: Settings,
+    reviewer_bot: bots.TelegramBot,
+    publisher_bot: bots.TelegramBot,
+    sheets: sheets_mod.SheetsClient,
+    background_tasks: BackgroundTasks,
+) -> None:
     try:
         deal = await sheets.get_pending_deal(deal_id)
     except SheetsError:
@@ -104,6 +132,43 @@ async def _handle_message(
     deal = await sheets.update_pending_deal(deal_id, status="processing")
     await reviewer_bot.send_message(chat_id, f"⏳ Rendering banner for {deal['title']} at {text} BDT...")
     background_tasks.add_task(_process_publish, deal, text, chat_id, settings, reviewer_bot, publisher_bot, sheets)
+
+
+async def _handle_link_paste(
+    url: str,
+    chat_id: int,
+    settings: Settings,
+    reviewer_bot: bots.TelegramBot,
+    sheets: sheets_mod.SheetsClient,
+) -> None:
+    try:
+        scraped = await scrape_product_link(url)
+    except LinkScrapeError as exc:
+        await reviewer_bot.send_message(chat_id, f"⚠️ Couldn't build a deal from that link: {exc}")
+        return
+
+    deal_id = f"link-{uuid.uuid4().hex[:10]}"
+    try:
+        await _create_pending_deal_and_review_card(
+            deal_id=deal_id,
+            title=scraped["title"],
+            myr_price=scraped["price"],
+            sizes="Not detected — confirm before posting",
+            image_url=scraped["image_url"],
+            promo_note=None,
+            settings=settings,
+            reviewer_bot=reviewer_bot,
+            sheets=sheets,
+            extra_note=(
+                "⚠️ *Auto-extracted from a pasted link* — price currency and sizes "
+                "aren't verified. Double-check both before choosing an action.\n\n"
+            ),
+        )
+    except (bots.TelegramError, SheetsError) as exc:
+        logger.exception("Failed to create pending deal from pasted link %s", url)
+        await reviewer_bot.send_message(
+            chat_id, f"⚠️ Found the product but failed to create a review card: {exc}"
+        )
 
 
 async def _process_publish(
@@ -161,6 +226,54 @@ def _promo_note_line(promo_note: str | None) -> str:
     )
 
 
+def _brand_line(product_title: str) -> str:
+    """A "Brand:" caption line when the title names one of the brands the
+    banner itself recognizes (image_engine.detect_brand) — empty otherwise,
+    so an unrecognized brand degrades to exactly the old caption text."""
+    brand = detect_brand(product_title)
+    return f"\U0001f3f7️ *Brand:* {brand}\n" if brand else ""
+
+
+async def _create_pending_deal_and_review_card(
+    deal_id: str,
+    title: str,
+    myr_price: float,
+    sizes: str,
+    image_url: str,
+    promo_note: str | None,
+    settings: Settings,
+    reviewer_bot: bots.TelegramBot,
+    sheets: sheets_mod.SheetsClient,
+    extra_note: str = "",
+) -> None:
+    """Shared by the Apify webhook and the paste-a-link flow: save the
+    pendingDeals row and send the reviewer the same postonly/createorder/
+    reject card either way."""
+    await sheets.create_pending_deal({
+        "id": deal_id,
+        "title": title,
+        "myr_price": myr_price,
+        "sizes": sizes,
+        "image_url": image_url,
+        "promo_note": promo_note or "",
+        "status": "awaiting_review",
+        "pending_action": "",
+        "created_at": _now_iso(),
+    })
+
+    caption = (
+        "\U0001f6a8 *NEW DEAL DETECTED*\n\n"
+        f"\U0001f45f *Item:* {bots.escape_markdown(title)}\n"
+        f"{_brand_line(title)}"
+        f"\U0001f3f7️ *MYR Price:* {myr_price}\n"
+        f"\U0001f45f *Sizes:* {bots.escape_markdown(sizes)}\n\n"
+        f"{_promo_note_line(promo_note)}"
+        f"{extra_note}"
+        "Select action:"
+    )
+    await reviewer_bot.send_review_card(settings.telegram_chat_id, image_url, caption, deal_id)
+
+
 def _build_caption(deal: dict, bdt_price: str) -> str:
     title = bots.escape_markdown(deal["title"])
     sizes = bots.escape_markdown(deal["sizes"])
@@ -168,6 +281,7 @@ def _build_caption(deal: dict, bdt_price: str) -> str:
         "\U0001f4cc *FINAL POST*\n\n"
         f"\\[PRE-ORDER MALAYSIA\\] {title}\n"
         "All the way from Malaysia to Bangladesh\n\n"
+        f"{_brand_line(deal['title'])}"
         f"\U0001f4b0 *Offer Price:* {bdt_price} BDT\n"
         f"\U0001f45f *Available Sizes:* {sizes}\n"
         "\U0001f4e6 *Delivery:* 3-4 weeks, if lucky could be 2 weeks.\n"
@@ -188,6 +302,7 @@ def _build_order_row(deal: dict, bdt_price: str, order_number: str, brand: str) 
         "customerPhone": "",
         "customerFb": "",
         "productName": deal["title"],
+        "productBrand": detect_brand(deal["title"]) or "",
         "productDescription": f"Sizes: {deal['sizes']}",
         "costPriceRM": myr_price,
         "conversionRate": "",
@@ -220,29 +335,24 @@ def create_app(settings: Settings) -> FastAPI:
         if x_apify_secret != settings.apify_webhook_secret:
             raise HTTPException(status_code=403, detail="Invalid secret")
 
-        try:
-            await sheets.create_pending_deal({
-                "id": deal.deal_id,
-                "title": deal.title,
-                "myr_price": deal.myr_price,
-                "sizes": deal.sizes,
-                "image_url": deal.image_url,
-                "promo_note": deal.promo_note or "",
-                "status": "awaiting_review",
-                "pending_action": "",
-                "created_at": _now_iso(),
-            })
-
-            caption = (
-                "\U0001f6a8 *NEW DEAL DETECTED*\n\n"
-                f"\U0001f45f *Item:* {bots.escape_markdown(deal.title)}\n"
-                f"\U0001f3f7️ *MYR Price:* {deal.myr_price}\n"
-                f"\U0001f45f *Sizes:* {bots.escape_markdown(deal.sizes)}\n\n"
-                f"{_promo_note_line(deal.promo_note)}"
-                "Select action:"
+        if not (DEAL_PRICE_MIN_MYR <= deal.myr_price <= DEAL_PRICE_MAX_MYR):
+            logger.info(
+                "Filtered scraped deal %s: MYR %.2f outside review range %.0f-%.0f",
+                deal.deal_id, deal.myr_price, DEAL_PRICE_MIN_MYR, DEAL_PRICE_MAX_MYR,
             )
-            await reviewer_bot.send_review_card(
-                settings.telegram_chat_id, deal.image_url, caption, deal.deal_id
+            return {"status": "filtered", "deal_id": deal.deal_id, "reason": "price_out_of_range"}
+
+        try:
+            await _create_pending_deal_and_review_card(
+                deal_id=deal.deal_id,
+                title=deal.title,
+                myr_price=deal.myr_price,
+                sizes=deal.sizes,
+                image_url=deal.image_url,
+                promo_note=deal.promo_note,
+                settings=settings,
+                reviewer_bot=reviewer_bot,
+                sheets=sheets,
             )
         except (bots.TelegramError, SheetsError) as exc:
             logger.exception("Failed to process scraped deal %s", deal.deal_id)

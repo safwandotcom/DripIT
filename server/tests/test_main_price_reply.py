@@ -73,9 +73,40 @@ def test_price_reply_publishes_and_creates_order_for_createorder_action():
     assert order_write["data"]["orderNumber"] == "DI-0001"
     assert order_write["data"]["productName"] == "Air Max"
     assert order_write["data"]["costPriceRM"] == 350
+    # "Air Max" alone doesn't name a recognized brand — productBrand stays empty
+    # rather than guessing, and the caption gets no Brand line either.
+    assert order_write["data"]["productBrand"] == ""
+    assert b"*Brand:*" not in publish_route.calls.last.request.content
 
     final_status = [c["data"]["status"] for c in saved_calls if c["entity"] == "pendingDeals"][-1]
     assert final_status == "published"
+
+
+@respx.mock
+def test_price_reply_recognizes_brand_in_caption_and_order():
+    _mock_pending_deal("d1n", title="Nike Air Force 1 Low", pending_action="createorder")
+    respx.get("https://x/i.jpg").mock(return_value=httpx.Response(200, content=_sample_png_bytes()))
+    respx.get(SHEETS_URL, params={"action": "list", "entity": "orders"}).mock(
+        return_value=httpx.Response(200, json={"ok": True, "data": []})
+    )
+    save_route = respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    respx.post("https://api.telegram.org/bottest-reviewer-token/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+    publish_route = respx.post("https://api.telegram.org/bottest-publisher-token/sendPhoto").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    resp = client.post(
+        "/webhook/telegram-reviewer", headers=SECRET_HEADERS, json=_price_reply_payload("d1n", "7600")
+    )
+
+    assert resp.status_code == 200
+    assert b"*Brand:* Nike" in publish_route.calls.last.request.content
+
+    saved_calls = [json.loads(c.request.content) for c in save_route.calls]
+    order_write = next(c for c in saved_calls if c["entity"] == "orders")
+    assert order_write["data"]["productBrand"] == "Nike"
 
 
 @respx.mock

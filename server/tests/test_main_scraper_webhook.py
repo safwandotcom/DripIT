@@ -9,7 +9,7 @@ from main import app
 client = TestClient(app)
 SHEETS_URL = "https://script.google.com/macros/s/test/exec"
 VALID_DEAL = {
-    "deal_id": "d1", "title": "Air Max 90", "myr_price": 350, "sizes": "40,41",
+    "deal_id": "d1", "title": "Air Max 90", "myr_price": 150, "sizes": "40,41",
     "image_url": "https://x/i.jpg",
 }
 
@@ -53,7 +53,7 @@ def test_scraper_deal_creates_pending_row_and_sends_review_card():
     saved = json.loads(save_route.calls.last.request.content)
     assert saved["entity"] == "pendingDeals"
     assert saved["data"]["id"] == "d1"
-    assert saved["data"]["myr_price"] == 350.0
+    assert saved["data"]["myr_price"] == 150.0
     assert saved["data"]["status"] == "awaiting_review"
 
     assert send_route.called
@@ -97,6 +97,73 @@ def test_scraper_deal_without_promo_note_omits_disclaimer():
     assert resp.status_code == 200
     sent = json.loads(send_route.calls.last.request.content)
     assert "Site promo at scrape time" not in sent["caption"]
+
+
+@respx.mock
+def test_scraper_deal_includes_brand_line_when_title_names_a_known_brand():
+    respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    send_route = respx.post("https://api.telegram.org/bottest-reviewer-token/sendPhoto").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    nike_deal = {**VALID_DEAL, "deal_id": "d3", "title": "Nike Air Max 90"}
+    resp = client.post(
+        "/webhook/scraper-deal", json=nike_deal, headers={"X-Apify-Secret": "test-apify-secret"}
+    )
+
+    assert resp.status_code == 200
+    sent = json.loads(send_route.calls.last.request.content)
+    assert "*Brand:* Nike" in sent["caption"]
+
+
+@respx.mock
+def test_scraper_deal_omits_brand_line_when_title_names_no_known_brand():
+    respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    send_route = respx.post("https://api.telegram.org/bottest-reviewer-token/sendPhoto").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    resp = client.post(
+        "/webhook/scraper-deal", json=VALID_DEAL, headers={"X-Apify-Secret": "test-apify-secret"}
+    )
+
+    assert resp.status_code == 200
+    sent = json.loads(send_route.calls.last.request.content)
+    assert "*Brand:*" not in sent["caption"]
+
+
+@respx.mock
+def test_scraper_deal_filters_price_above_review_range():
+    # No Sheets or Telegram mocks registered — respx raises if either is
+    # actually called, which is exactly what proves the deal was dropped
+    # before reaching that code.
+    too_expensive = {**VALID_DEAL, "deal_id": "d4", "myr_price": 250}
+
+    resp = client.post(
+        "/webhook/scraper-deal", json=too_expensive, headers={"X-Apify-Secret": "test-apify-secret"}
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "filtered", "deal_id": "d4", "reason": "price_out_of_range"}
+
+
+@respx.mock
+def test_scraper_deal_accepts_price_at_range_boundaries():
+    save_route = respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    respx.post("https://api.telegram.org/bottest-reviewer-token/sendPhoto").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    for deal_id, price in [("d5", 0), ("d6", 200)]:
+        resp = client.post(
+            "/webhook/scraper-deal",
+            json={**VALID_DEAL, "deal_id": deal_id, "myr_price": price},
+            headers={"X-Apify-Secret": "test-apify-secret"},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok", "deal_id": deal_id}
+
+    assert save_route.call_count == 2
 
 
 @respx.mock

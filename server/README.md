@@ -54,6 +54,28 @@ for the full design.
    header `X-Apify-Secret: <APIFY_WEBHOOK_SECRET>` on the outgoing request
    (Apify's webhook integration UI lets you add custom headers).
 
+## Price-range filter
+
+Any scraped deal outside `DEAL_PRICE_MIN_MYR`–`DEAL_PRICE_MAX_MYR` (0–200 by
+default; edit the constants at the top of `main.py`) never reaches the
+reviewer at all — `/webhook/scraper-deal` returns `{"status": "filtered", ...}`
+and skips creating a pending deal or sending a review card. This is
+independent of whatever price filtering the Apify actor itself does.
+
+## Paste-a-link deals
+
+Sending the reviewer bot a plain message that's just a product URL (not a
+reply to anything) fetches that page's Open Graph tags (`og:title`,
+`og:image`, `product:price:amount`/`og:price:amount`) and creates the same
+review card a scraped deal would — useful for a specific item you want to
+post without waiting on the scraper. Works well on big retail sites (Nike,
+adidas, Foot Locker, most Shopify/WooCommerce stores); a site that doesn't
+expose those tags gets a reply naming what's missing instead of a guess.
+The extracted price's currency isn't verified and sizes aren't detected —
+the review card flags both for you to check before choosing an action, and
+the price-range filter above does **not** apply to pasted links (a link you
+deliberately paste isn't scraper noise to filter).
+
 ## Manual smoke test (run once after every deploy)
 
 1. Send a test payload to `/webhook/scraper-deal` (with the correct
