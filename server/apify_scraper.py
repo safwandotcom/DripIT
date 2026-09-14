@@ -57,6 +57,11 @@ async def scrape_product_link_via_apify(
             response = await client.post(
                 _RUN_SYNC_URL.format(actor_id=actor_id),
                 headers={"Authorization": f"Bearer {api_token}"},
+                # The actor's default 1GB run memory left Camoufox critically
+                # memory-starved rendering Shein's page (confirmed live: "976
+                # MB of 1.00 GB (95%)" right when the page's JSON-LD injection
+                # never completed in time) — 4096 MB gives it real headroom.
+                params={"memory": 4096},
                 json={"product_url": url},
             )
             response.raise_for_status()
