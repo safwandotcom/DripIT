@@ -5,7 +5,7 @@ import pytest
 import respx
 from PIL import Image
 
-from image_engine import CANVAS_SIZE, ImageRenderError, detect_brand, render_banner
+from image_engine import CANVAS_SIZE, ImageRenderError, _key_out_flat_background, detect_brand, render_banner
 
 
 def _sample_png_bytes() -> bytes:
@@ -67,3 +67,51 @@ def test_detect_brand_returns_none_for_unrecognized_brand():
 def test_detect_brand_does_not_match_substring_inside_another_word():
     # "Pumas" should not fire the Puma brand mark — \b keeps this a whole-word match.
     assert detect_brand("Pumas Energy Drink Cooler") is None
+
+
+def _flat_background_photo() -> Image.Image:
+    # A light-grey square (like a real catalog product photo's backdrop,
+    # e.g. Under Armour's own bgc=f0f0f0) with a solid dark square "product"
+    # in the middle, clearly distinct from the background color.
+    img = Image.new("RGBA", (100, 100), (240, 240, 240, 255))
+    for x in range(30, 70):
+        for y in range(30, 70):
+            img.putpixel((x, y), (10, 10, 10, 255))
+    return img
+
+
+def test_key_out_flat_background_makes_background_transparent():
+    result = _key_out_flat_background(_flat_background_photo())
+    # Corner (background) faded out...
+    assert result.getpixel((0, 0))[3] < 50
+    # ...center (the "product") stays opaque.
+    assert result.getpixel((50, 50))[3] > 200
+
+
+def test_key_out_flat_background_leaves_busy_photo_fully_opaque():
+    # No uniform backdrop here — every pixel differs sharply from the
+    # corner, so nothing beyond a trivial sliver should be keyed out. (The
+    # corner pixel itself is, by definition, treated as "background" and
+    # always fades — that's not what's under test here.)
+    img = Image.new("RGBA", (100, 100), (0, 0, 0, 255))
+    for x in range(100):
+        for y in range(100):
+            img.putpixel((x, y), ((x * 7) % 256, (y * 13) % 256, (x + y) % 256, 255))
+
+    result = _key_out_flat_background(img)
+
+    assert result.getpixel((50, 50))[3] == 255
+    assert result.getpixel((99, 99))[3] == 255
+
+
+def test_key_out_flat_background_never_increases_existing_transparency():
+    # An image that already has real transparency somewhere (e.g. a proper
+    # cutout PNG) should stay transparent there regardless of corner color.
+    img = Image.new("RGBA", (100, 100), (240, 240, 240, 255))
+    for x in range(30, 70):
+        for y in range(30, 70):
+            img.putpixel((x, y), (10, 10, 10, 0))  # already transparent
+
+    result = _key_out_flat_background(img)
+
+    assert result.getpixel((50, 50))[3] == 0

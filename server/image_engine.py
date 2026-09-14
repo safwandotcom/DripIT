@@ -19,7 +19,7 @@ import io
 import re
 
 import httpx
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 from pathlib import Path
 
 CANVAS_SIZE = (1080, 1080)
@@ -221,6 +221,24 @@ def _draw_price(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], price
     draw.text((start_x + price_w + gap, cy + 6), "TAKA", font=font_unit, fill=_MUTED, anchor="lm")
 
 
+def _key_out_flat_background(img: Image.Image, low: int = 12, high: int = 40) -> Image.Image:
+    """Catalog product photos (Under Armour, Nike, etc.) are almost always
+    shot on a uniform near-white/grey backdrop and saved as flat opaque
+    images, not with real transparency. Pasted as-is onto this banner's own
+    white ground, that backdrop shows up as a visible box around the
+    product. Sample the corner as the background color and fade out
+    anything close to it, so only the product itself stays opaque — this
+    also makes the drop shadow drawn from this same alpha trace the
+    product's silhouette instead of the whole rectangle."""
+    rgb = img.convert("RGB")
+    bg_color = rgb.getpixel((0, 0))
+    distance = ImageChops.difference(rgb, Image.new("RGB", rgb.size, bg_color)).convert("L")
+    alpha = distance.point(lambda x: max(0, min(255, round((x - low) * 255 / (high - low)))))
+    result = img.convert("RGBA")
+    result.putalpha(ImageChops.darker(alpha, result.getchannel("A")))
+    return result
+
+
 async def render_banner(
     product_title: str,
     image_url: str,
@@ -240,6 +258,8 @@ async def render_banner(
     finally:
         if owns_client:
             await client.aclose()
+
+    product_img = _key_out_flat_background(product_img)
 
     canvas = Image.new("RGB", CANVAS_SIZE, color=_PAPER)
 
