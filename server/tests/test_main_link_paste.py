@@ -107,6 +107,58 @@ def test_pasted_link_missing_og_tags_reports_what_is_missing():
 
 
 @respx.mock
+def test_pasted_link_with_surrounding_text_is_still_recognized():
+    # A common real failure mode: the bot silently did nothing (no ack, no
+    # error) if the message wasn't *exactly* a bare URL — e.g. pasted with
+    # a caption, which is how people actually share links.
+    respx.get("https://shop.example.com/nike-air-max").mock(
+        return_value=httpx.Response(200, content=_og_html(title="Nike Air Max 90"))
+    )
+    respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    ack_route = respx.post("https://api.telegram.org/bottest-reviewer-token/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+    card_route = respx.post("https://api.telegram.org/bottest-reviewer-token/sendPhoto").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    resp = client.post(
+        "/webhook/telegram-reviewer",
+        headers=SECRET_HEADERS,
+        json=_link_message_payload("check this out: https://shop.example.com/nike-air-max !!"),
+    )
+
+    assert resp.status_code == 200
+    assert ack_route.called
+    assert card_route.called
+
+
+@respx.mock
+def test_pasted_link_without_scheme_is_still_recognized():
+    # People often paste "www.site.com/..." without the https:// prefix —
+    # this used to fail the same silent way.
+    respx.get("https://www.shop.example.com/nike-air-max").mock(
+        return_value=httpx.Response(200, content=_og_html(title="Nike Air Max 90"))
+    )
+    respx.post(SHEETS_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+    respx.post("https://api.telegram.org/bottest-reviewer-token/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+    card_route = respx.post("https://api.telegram.org/bottest-reviewer-token/sendPhoto").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {}})
+    )
+
+    resp = client.post(
+        "/webhook/telegram-reviewer",
+        headers=SECRET_HEADERS,
+        json=_link_message_payload("www.shop.example.com/nike-air-max"),
+    )
+
+    assert resp.status_code == 200
+    assert card_route.called
+
+
+@respx.mock
 def test_url_inside_a_reply_message_is_not_treated_as_a_link_paste():
     # A reply carrying a URL isn't the force-reply price prompt shape and
     # isn't a bare message either — it should be silently ignored, not

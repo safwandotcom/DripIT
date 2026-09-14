@@ -76,7 +76,21 @@ async def _handle_callback(
 
 
 _REF_PATTERN = re.compile(r"\[REF:([^\]]+)\]")
-_URL_PATTERN = re.compile(r"^https?://\S+$", re.IGNORECASE)
+# Matches a URL anywhere in the message, with or without a scheme (people
+# routinely paste "www.site.com/..." or "check this out: https://...— the
+# original ^...$ full-match pattern missed both and just did nothing, with
+# no ack and no error, which looked like the bot silently ignoring the link.
+_URL_PATTERN = re.compile(r"(https?://\S+|www\.\S+)", re.IGNORECASE)
+
+
+def _extract_url(text: str) -> str | None:
+    match = _URL_PATTERN.search(text)
+    if not match:
+        return None
+    url = match.group(0).rstrip(".,!?;:)\"'")
+    if not url.lower().startswith(("http://", "https://")):
+        url = f"https://{url}"
+    return url
 
 
 async def _handle_message(
@@ -101,11 +115,14 @@ async def _handle_message(
         await _handle_price_reply(match.group(1), text, chat_id, settings, reviewer_bot, publisher_bot, sheets, background_tasks)
         return
 
-    # A plain (non-reply) message that's just a URL: treat it as "build a
-    # deal from this product page" rather than requiring it come from Apify.
-    if reply_to_message is None and _URL_PATTERN.match(text):
-        await reviewer_bot.send_message(chat_id, "🔎 Fetching that link, one moment...")
-        background_tasks.add_task(_handle_link_paste, text, chat_id, settings, reviewer_bot, sheets)
+    # A plain (non-reply) message containing a URL anywhere in it: treat it
+    # as "build a deal from this product page" rather than requiring it
+    # come from Apify.
+    if reply_to_message is None:
+        url = _extract_url(text)
+        if url:
+            await reviewer_bot.send_message(chat_id, "🔎 Fetching that link, one moment...")
+            background_tasks.add_task(_handle_link_paste, url, chat_id, settings, reviewer_bot, sheets)
 
 
 async def _handle_price_reply(
