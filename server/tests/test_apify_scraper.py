@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 import respx
@@ -26,9 +28,29 @@ async def test_scrape_product_link_via_apify_returns_normalized_fields():
         "price": 72.25,
     }
     sent = route.calls.last.request
-    assert sent.url.params["token"] == "test-token"
-    import json as _json
-    assert _json.loads(sent.content)["product_url"] == "https://my.shein.com/some-product-p-123.html"
+    # The token must go in the Authorization header, never the URL — a
+    # query-string token would ride along into any exception message that
+    # includes the request URL (httpx's default str() does), and this
+    # backend surfaces ApifyLinkScrapeError's message straight into a
+    # Telegram reply. "token" must never appear as a URL query param.
+    assert "token" not in sent.url.params
+    assert sent.headers["Authorization"] == "Bearer test-token"
+    assert json.loads(sent.content)["product_url"] == "https://my.shein.com/some-product-p-123.html"
+
+
+@respx.mock
+async def test_scrape_product_link_via_apify_error_message_never_contains_the_token():
+    # The actual bug this guards against: an HTTP failure's error message
+    # reaching a Telegram reply must not be able to leak the token under
+    # any circumstance, including if a future change reintroduces it into
+    # the URL somehow.
+    respx.post(RUN_SYNC_URL).mock(return_value=httpx.Response(400, text="Bad input: product_url is required"))
+
+    with pytest.raises(ApifyLinkScrapeError) as exc_info:
+        await scrape_product_link_via_apify("https://my.shein.com/x-p-1.html", "super-secret-token", "some-actor-id")
+
+    assert "super-secret-token" not in str(exc_info.value)
+    assert "Bad input" in str(exc_info.value)
 
 
 @respx.mock

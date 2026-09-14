@@ -47,14 +47,29 @@ async def scrape_product_link_via_apify(
     client = client or httpx.AsyncClient(timeout=_TIMEOUT)
     try:
         try:
+            # The token goes in the Authorization header, never the URL —
+            # httpx's own exception messages include the full request URL,
+            # and a query-string token would ride straight along into any
+            # error text a caller surfaces to a user (this main.py surfaces
+            # ApifyLinkScrapeError's message directly into a Telegram
+            # reply). Keeping the secret out of the URL is what makes that
+            # safe, not any later formatting choice below.
             response = await client.post(
                 _RUN_SYNC_URL.format(actor_id=actor_id),
-                params={"token": api_token},
+                headers={"Authorization": f"Bearer {api_token}"},
                 json={"product_url": url},
             )
             response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            # Surface the response body (Apify's own error detail, never
+            # secret) rather than str(exc), which includes the request URL.
+            detail = exc.response.text.strip()[:300]
+            raise ApifyLinkScrapeError(f"The Apify actor run failed ({exc.response.status_code}): {detail}") from exc
         except httpx.HTTPError as exc:
-            raise ApifyLinkScrapeError(f"The Apify actor run failed: {exc}") from exc
+            # No response to read a safe detail from (timeout, connection
+            # failure, etc.) — name the failure without formatting the
+            # exception itself, for the same reason as above.
+            raise ApifyLinkScrapeError(f"The Apify actor run failed: {type(exc).__name__}") from exc
     finally:
         if owns_client:
             await client.aclose()
