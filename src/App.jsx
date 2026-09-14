@@ -4932,22 +4932,109 @@ function buildTelegramCardHTML({ photoDataUrl, productName, price }, company) {
   `;
 }
 
+function npmLoadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+// Client-side port of image_engine.py's _key_out_flat_background +
+// _crop_to_opaque_bbox: samples the photo's own top-left corner as the
+// "background" color and fades out anything close to it (same low/high
+// thresholds and luminance-weighted distance formula as the Python
+// version), then crops away the resulting transparent margin. Built for
+// the same real-world case that code was — a catalog product photo shot
+// on a flat/plain backdrop (adidas, Shein, etc.) — not arbitrary busy
+// backgrounds, which this won't clean up well; that's what the on/off
+// toggle in the UI is for.
+async function npmRemoveFlatBackground(dataUrl, low = 12, high = 40) {
+  const img = await npmLoadImage(dataUrl);
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const { width, height } = canvas;
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+
+  const bgR = data[0], bgG = data[1], bgB = data[2];
+  let minX = width, minY = height, maxX = -1, maxY = -1;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const distance = 0.299 * Math.abs(data[i] - bgR) + 0.587 * Math.abs(data[i + 1] - bgG) + 0.114 * Math.abs(data[i + 2] - bgB);
+    let alpha = Math.round((distance - low) * 255 / (high - low));
+    alpha = Math.max(0, Math.min(255, alpha));
+    data[i + 3] = Math.min(data[i + 3], alpha); // never increase existing transparency
+    if (data[i + 3] > 10) {
+      const px = (i / 4) % width, py = Math.floor((i / 4) / width);
+      if (px < minX) minX = px; if (px > maxX) maxX = px;
+      if (py < minY) minY = py; if (py > maxY) maxY = py;
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+
+  if (maxX < minX || maxY < minY) return canvas.toDataURL('image/png'); // fully transparent — nothing to crop to
+  const cropW = maxX - minX + 1, cropH = maxY - minY + 1;
+  const cropCanvas = document.createElement('canvas');
+  cropCanvas.width = cropW;
+  cropCanvas.height = cropH;
+  cropCanvas.getContext('2d').drawImage(canvas, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+  return cropCanvas.toDataURL('image/png');
+}
+
 function NewPostMaker({ company, showToast }) {
   const blank = { photoDataUrl: '', productName: '', price: '' };
   const [form, setForm] = useState(blank);
+  const [cleanedPhotoUrl, setCleanedPhotoUrl] = useState('');
+  const [bgRemoved, setBgRemoved] = useState(true);
+  const [processingBg, setProcessingBg] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
+  const bgRequestId = useRef(0);
 
-  const onPhotoChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const loadPhotoFile = (file) => {
+    if (!file || !file.type?.startsWith('image/')) {
+      if (file) showToast('That file is not an image', 'error');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => setForm(f => ({ ...f, photoDataUrl: reader.result }));
     reader.readAsDataURL(file);
   };
 
+  const onPhotoChange = (e) => loadPhotoFile(e.target.files?.[0]);
+
+  const onPhotoDrop = (e) => {
+    e.preventDefault();
+    setDragActive(false);
+    loadPhotoFile(e.dataTransfer.files?.[0]);
+  };
+  const onDragOver = (e) => { e.preventDefault(); setDragActive(true); };
+  const onDragLeave = (e) => { e.preventDefault(); setDragActive(false); };
+
+  // Re-run background removal whenever a new photo is loaded. Guarded by a
+  // request id so an old run finishing late (e.g. user swapped photos
+  // twice quickly) can't clobber a newer one's result.
+  useEffect(() => {
+    if (!form.photoDataUrl) { setCleanedPhotoUrl(''); return; }
+    const requestId = ++bgRequestId.current;
+    setProcessingBg(true);
+    npmRemoveFlatBackground(form.photoDataUrl)
+      .then(url => { if (bgRequestId.current === requestId) setCleanedPhotoUrl(url); })
+      .catch(() => { if (bgRequestId.current === requestId) showToast('Could not process that photo — showing it as-is', 'error'); })
+      .finally(() => { if (bgRequestId.current === requestId) setProcessingBg(false); });
+  }, [form.photoDataUrl]);
+
+  const activePhotoUrl = (bgRemoved && cleanedPhotoUrl) ? cleanedPhotoUrl : form.photoDataUrl;
+
   const startOver = () => {
     setForm(blank);
+    setCleanedPhotoUrl('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -4955,9 +5042,10 @@ function NewPostMaker({ company, showToast }) {
     if (!form.photoDataUrl) return showToast('Add a product photo first', 'error');
     if (!form.productName.trim()) return showToast('Enter a product name', 'error');
     if (!String(form.price).replace(/[^\d]/g, '')) return showToast('Enter a price', 'error');
+    if (processingBg) return showToast('Still removing the background — one moment', 'error');
 
     setDownloading(true);
-    const cardHtml = buildTelegramCardHTML(form, company);
+    const cardHtml = buildTelegramCardHTML({ ...form, photoDataUrl: activePhotoUrl }, company);
     const win = window.open('', '_blank', `width=${NPM_CANVAS},height=${NPM_CANVAS}`);
     if (!win) {
       setDownloading(false);
@@ -4998,17 +5086,42 @@ function NewPostMaker({ company, showToast }) {
       <div className="pcg-card" style={{ flex: '0 0 320px', padding: 22 }}>
         <Field label="Product Photo">
           {form.photoDataUrl ? (
-            <div style={{ position: 'relative' }}>
-              <img src={form.photoDataUrl} style={{ width: '100%', height: 160, objectFit: 'contain', background: '#F7F4EE', borderRadius: 8, border: `1px solid ${T.border}` }} />
+            <div
+              onDrop={onPhotoDrop} onDragOver={onDragOver} onDragLeave={onDragLeave}
+              style={{ position: 'relative' }}
+            >
+              <div style={{ position: 'relative', width: '100%', height: 160, background: '#F7F4EE', borderRadius: 8, border: `1px solid ${dragActive ? T.terracotta : T.border}`, overflow: 'hidden' }}>
+                <img src={activePhotoUrl} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                {processingBg && (
+                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: T.muted }}>
+                    Removing background…
+                  </div>
+                )}
+                {dragActive && (
+                  <div style={{ position: 'absolute', inset: 0, background: `${T.terracotta}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: T.terracottaDark }}>
+                    Drop to replace photo
+                  </div>
+                )}
+              </div>
               <button onClick={() => fileInputRef.current?.click()} className="pcg-btn pcg-btn-secondary pcg-btn-sm" style={{ marginTop: 8, width: '100%', justifyContent: 'center' }}>Change photo</button>
+              {cleanedPhotoUrl && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12.5, color: T.ink, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={bgRemoved} onChange={e => setBgRemoved(e.target.checked)} style={{ accentColor: T.terracotta }} />
+                  Remove background
+                </label>
+              )}
             </div>
           ) : (
-            <button onClick={() => fileInputRef.current?.click()} style={{
-              width: '100%', height: 160, border: `2px dashed ${T.border}`, borderRadius: 8, background: T.cream,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
-              color: T.muted, cursor: 'pointer', fontSize: 13
-            }}>
-              <Upload size={22} strokeWidth={1.5} /> Click to upload photo
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              onDrop={onPhotoDrop} onDragOver={onDragOver} onDragLeave={onDragLeave}
+              style={{
+                width: '100%', height: 160, border: `2px dashed ${dragActive ? T.terracotta : T.border}`, borderRadius: 8,
+                background: dragActive ? `${T.terracotta}10` : T.cream,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
+                color: dragActive ? T.terracottaDark : T.muted, cursor: 'pointer', fontSize: 13
+              }}>
+              <Upload size={22} strokeWidth={1.5} /> {dragActive ? 'Drop photo here' : 'Click or drag & drop a photo'}
             </button>
           )}
           <input ref={fileInputRef} type="file" accept="image/*" onChange={onPhotoChange} style={{ display: 'none' }} />
@@ -5045,7 +5158,7 @@ function NewPostMaker({ company, showToast }) {
         }}>
           <div
             style={{ width: NPM_CANVAS, height: NPM_CANVAS, transform: `scale(${scale})`, transformOrigin: 'top left' }}
-            dangerouslySetInnerHTML={{ __html: buildTelegramCardHTML(form, company) }}
+            dangerouslySetInnerHTML={{ __html: buildTelegramCardHTML({ ...form, photoDataUrl: activePhotoUrl }, company) }}
           />
         </div>
       </div>
