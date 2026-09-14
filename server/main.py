@@ -440,13 +440,25 @@ def create_app(settings: Settings) -> FastAPI:
             raise HTTPException(status_code=403, detail="Invalid secret")
 
         data = await request.json()
+        logger.info("Telegram update keys: %s", sorted(data.keys()))
 
         if "callback_query" in data:
-            await _handle_callback(data["callback_query"], settings, reviewer_bot, sheets)
+            cq = data["callback_query"]
+            logger.info(
+                "callback_query: data=%r chat=%s user=%s",
+                cq.get("data"), cq.get("message", {}).get("chat", {}).get("id"), cq.get("from", {}).get("id"),
+            )
+            await _handle_callback(cq, settings, reviewer_bot, sheets)
             return {"status": "ok"}
 
         if "message" in data:
-            await _handle_message(data["message"], settings, reviewer_bot, publisher_bot, sheets, background_tasks)
+            msg = data["message"]
+            logger.info(
+                "message: chat=%s user=%s is_reply=%s text=%r",
+                msg.get("chat", {}).get("id"), msg.get("from", {}).get("id"),
+                "reply_to_message" in msg, (msg.get("text") or "")[:200],
+            )
+            await _handle_message(msg, settings, reviewer_bot, publisher_bot, sheets, background_tasks)
             return {"status": "ok"}
 
         return {"status": "ignored"}
