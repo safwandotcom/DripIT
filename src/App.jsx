@@ -29,7 +29,7 @@ const COMPANIES = {
 };
 
 const BANK = {
-  bkash: '+880143800538',
+  bkash: '+8801843800538',
   accountNumber: '2933240599001',
   bankName: 'The City Bank Ltd',
   branch: 'Mouchak Branch',
