@@ -1885,10 +1885,17 @@ function NewOrder({ onSubmit, onCancel, defaultRate }) {
               {(() => {
                 const cogs = calc.cost * (parseFloat(form.conversionRate) || 0);
                 const profit = calc.selling - cogs;
+                // Margin on the selling price (profit ÷ revenue), not on
+                // cost — the standard meaning of "profit margin".
+                const margin = calc.selling > 0 ? (profit / calc.selling) * 100 : 0;
                 return (
                   <>
                     <PreviewRow label="COGS (BDT)" value={`− ${fmtBDT(cogs)}`} muted />
-                    <PreviewRow label="Projected Profit" value={fmtBDT(profit)} bold />
+                    <PreviewRow
+                      label="Projected Profit" value={fmtBDT(profit)} bold
+                      badge={calc.selling > 0 ? `${margin.toFixed(1)}%` : '—'}
+                      badgeColor={profit >= 0 ? '#30D158' : '#FF375F'}
+                    />
                   </>
                 );
               })()}
@@ -1962,10 +1969,19 @@ function Field({ label, children, style }) {
   return <div style={style}><label className="pcg-label">{label}</label>{children}</div>;
 }
 
-function PreviewRow({ label, value, bold, muted }) {
+function PreviewRow({ label, value, bold, muted, badge, badgeColor }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', fontSize: muted ? 12 : 13.5, color: muted ? T.cream + '88' : T.cream }}>
-      <span>{label}</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        {label}
+        {badge && (
+          <span style={{
+            fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
+            background: `${badgeColor || '#30D158'}26`, color: badgeColor || '#30D158',
+            fontVariantNumeric: 'tabular-nums', fontFamily: T.sans
+          }}>{badge}</span>
+        )}
+      </span>
       <span style={{ fontFamily: bold ? T.serif : T.sans, fontWeight: bold ? 500 : 400, fontSize: bold ? 16 : (muted ? 12 : 13.5), fontVariantNumeric: 'tabular-nums' }}>{value}</span>
     </div>
   );
