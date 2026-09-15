@@ -3,8 +3,11 @@
 Design: follows the owner's own hand-drawn sample layout exactly — a plain
 "PRE-ORDER FROM MALAYSIA" header, the drip_ittt wordmark, a bordered frame
 around the product photo, product name + price beneath it, and a footer
-split between social handles (left) and a phone number (right). Black
-text/ink on white, matching the brand's own black/white palette.
+split between social handles (left) and a phone number (right). Black ink
+on the same soft grey (#ECEFF1) the New Post Maker page uses, with the
+product photo's own background automatically keyed out (see
+_key_out_flat_background) so it composites cleanly onto that grey instead
+of showing its own white/grey studio backdrop.
 
 Fonts are vendored under assets/fonts/ (SIL OFL licensed, see the OFL.txt
 files alongside them) rather than loaded from the OS, for the same reason
@@ -25,7 +28,7 @@ CANVAS_SIZE = (1080, 1080)
 
 _FONT_DIR = Path(__file__).resolve().parent / "assets" / "fonts"
 
-_PAPER = "#FFFFFF"
+_PAPER = "#ECEFF1"  # matches New Post Maker's card background exactly
 _INK = "#1E1B18"
 _MUTED = "#8A8177"
 
