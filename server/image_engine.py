@@ -288,6 +288,38 @@ def _estimate_border_background(rgb: Image.Image) -> Image.Image:
     return bg
 
 
+def _decontaminate_edge_colors(rgb: Image.Image, predicted_bg: Image.Image, alpha: Image.Image) -> Image.Image:
+    """A partially-faded edge pixel's own RGB is still a blend of the
+    product's true color and whatever backdrop color the *original* photo
+    happened to have baked in there (its own anti-aliasing/soft shadow) —
+    fading its alpha alone doesn't remove that. Composited as-is onto a
+    banner background of a different color, that leftover blend shows up
+    as a faint mismatched fringe/halo traced around the product (visible
+    even once the ghost-box behind it is gone). Un-mixes each pixel back
+    to the product's actual color using the standard formula for a known
+    background (observed = alpha*true + (1-alpha)*bg, solved for true) —
+    at full alpha this reduces to a no-op, so the product's interior is
+    completely unaffected; only the fading edge pixels change."""
+    w, h = rgb.size
+    src, bg, a = rgb.load(), predicted_bg.load(), alpha.load()
+    out = Image.new("RGB", (w, h))
+    put = out.load()
+    for y in range(h):
+        for x in range(w):
+            frac = a[x, y] / 255.0
+            if frac <= 0.02:
+                put[x, y] = bg[x, y]  # fully transparent — color is invisible; avoid dividing by ~0
+                continue
+            r, g, b = src[x, y]
+            br, bgc, bb = bg[x, y]
+            put[x, y] = (
+                max(0, min(255, round(br + (r - br) / frac))),
+                max(0, min(255, round(bgc + (g - bgc) / frac))),
+                max(0, min(255, round(bb + (b - bb) / frac))),
+            )
+    return out
+
+
 def _key_out_flat_background(img: Image.Image, low: int = 12, high: int = 40, probe_size: int = 220) -> Image.Image:
     """Catalog product photos (Under Armour, Nike, etc.) are almost never a
     truly flat single color — real studio shots carry a soft vignette
@@ -306,20 +338,30 @@ def _key_out_flat_background(img: Image.Image, low: int = 12, high: int = 40, pr
     product on a similarly light backdrop got silently eaten, since its
     surface shading is just as gradual as the real background's). Computed
     on a downscaled probe image for speed and upscaled back, which also
-    gives naturally anti-aliased edges."""
+    gives naturally anti-aliased edges.
+
+    Also decontaminates the fading edge pixels' own color (see
+    _decontaminate_edge_colors) — needed even after the ghost-box is
+    gone, since a low-contrast product (e.g. a white/pale shoe with a
+    translucent mesh panel, tested live) still showed a faint halo where
+    partially-faded edge pixels carried leftover color from the photo's
+    own backdrop."""
     rgb = img.convert("RGB")
     w, h = rgb.size
     scale = min(1.0, probe_size / max(w, h))
     pw, ph = max(1, round(w * scale)), max(1, round(h * scale))
     probe = rgb.resize((pw, ph), Image.Resampling.BILINEAR) if scale < 1.0 else rgb
 
-    predicted_bg = _estimate_border_background(probe)
-    distance = ImageChops.difference(probe, predicted_bg).convert("L")
+    predicted_bg_probe = _estimate_border_background(probe)
+    distance = ImageChops.difference(probe, predicted_bg_probe).convert("L")
     probe_alpha = distance.point(lambda x: max(0, min(255, round((x - low) * 255 / (high - low)))))
 
     alpha = probe_alpha.resize((w, h), Image.Resampling.BILINEAR) if scale < 1.0 else probe_alpha
-    result = img.convert("RGBA")
-    result.putalpha(ImageChops.darker(alpha, result.getchannel("A")))
+    predicted_bg = predicted_bg_probe.resize((w, h), Image.Resampling.BILINEAR) if scale < 1.0 else predicted_bg_probe
+
+    decontaminated = _decontaminate_edge_colors(rgb, predicted_bg, alpha)
+    result = decontaminated.convert("RGBA")
+    result.putalpha(ImageChops.darker(alpha, img.convert("RGBA").getchannel("A")))
     return result
 
 
