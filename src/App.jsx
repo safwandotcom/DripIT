@@ -386,7 +386,7 @@ export default function App() {
   const [printReceipt, setPrintReceipt] = useState(null);
   const [paymentPrompt, setPaymentPrompt] = useState(null); // { order, kind, defaultAmount }
   const [ownerDrawPrompt, setOwnerDrawPrompt] = useState(false);
-  const [settings, setSettings] = useState({ realExchangeRate: 25 });
+  const [settings, setSettings] = useState({ realExchangeRate: 32 });
 
   // Load
   useEffect(() => {
@@ -400,7 +400,7 @@ export default function App() {
         storage.load('po_invoices', []),
         storage.load('po_counters', { drip_ittt: { order: 1, invoice: 1 }, NOVUS: { order: 1, invoice: 1 } }),
         storage.load('po_current_company', 'drip_ittt'),
-        storage.load('po_settings', { realExchangeRate: 25 })
+        storage.load('po_settings', { realExchangeRate: 32 })
       ]);
       setOrders(o.map(x => ({ company: 'drip_ittt', ...x })));
       setExpenses(e.map(x => ({ company: 'drip_ittt', ...x })));
@@ -874,7 +874,7 @@ export default function App() {
 
   // === STATS ===
   const stats = useMemo(() => {
-    const realRate = parseFloat(settings.realExchangeRate) || 25;
+    const realRate = parseFloat(settings.realExchangeRate) || 32;
     const delivered = cOrders.filter(o => o.status === 'delivered');
     const totalRevenue = delivered.reduce((s, o) => s + calcOrder(o).selling, 0);
     const advanceReceived = cOrders.filter(o => o.advancePaid && !o.delivered).reduce((s, o) => s + calcOrder(o).advance, 0);
@@ -1560,7 +1560,7 @@ function NewOrder({ onSubmit, onCancel, defaultRate }) {
     customerName: '', customerPhone: '', customerAddress: '', customerFb: '',
     items: [{ id: uid(), productName: '', productDescription: '', costRM: '', qty: 1, priceMode: 'multiplier', multiplier: COST_MULTIPLIER, sellingBDT: '' }],
     multiplier: COST_MULTIPLIER,
-    conversionRate: defaultRate || 25,
+    conversionRate: defaultRate || 32,
     discountType: 'none', discountValue: '',
     notes: '',
     skipAdvance: false
@@ -1890,7 +1890,7 @@ function NewOrder({ onSubmit, onCancel, defaultRate }) {
                 const margin = calc.selling > 0 ? (profit / calc.selling) * 100 : 0;
                 return (
                   <>
-                    <PreviewRow label="COGS (BDT)" value={`− ${fmtBDT(cogs)}`} muted />
+                    <PreviewRow label="Total COGS (BDT)" value={`− ${fmtBDT(cogs)}`} muted />
                     <PreviewRow
                       label="Projected Profit" value={fmtBDT(profit)} bold
                       badge={calc.selling > 0 ? `${margin.toFixed(1)}%` : '—'}
@@ -2587,7 +2587,7 @@ function ProfitView({ orders, expenses, ledger, settings, setSettings, onOwnerDr
     return true; // 'all'
   };
 
-  const rate = parseFloat(settings.realExchangeRate) || 25;
+  const rate = parseFloat(settings.realExchangeRate) || 32;
 
   // REVENUE — sum of selling price for delivered orders (in period)
   const revenue = orders
