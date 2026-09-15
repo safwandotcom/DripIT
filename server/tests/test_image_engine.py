@@ -98,19 +98,25 @@ def test_key_out_flat_background_makes_background_transparent():
 
 
 def test_key_out_flat_background_leaves_busy_photo_fully_opaque():
-    # No uniform backdrop here — every pixel differs sharply from the
-    # corner, so nothing beyond a trivial sliver should be keyed out. (The
-    # corner pixel itself is, by definition, treated as "background" and
-    # always fades — that's not what's under test here.)
+    # No uniform backdrop here, and — unlike a smooth gradient — no gradual
+    # path from any border pixel to the interior either: neighboring pixels
+    # jump sharply in every direction, the way a real textured/patterned
+    # background (fabric, a printed backdrop) would. The border-walking
+    # keyer must not find some accidental smooth route through pixels that
+    # merely happen to be far from a single fixed corner sample. (Every
+    # border pixel is, by definition, a seed the keyer walks inward from
+    # and always fades — that's not what's under test here, so both sample
+    # points stay a few pixels clear of the border.)
     img = Image.new("RGBA", (100, 100), (0, 0, 0, 255))
     for x in range(100):
         for y in range(100):
-            img.putpixel((x, y), ((x * 7) % 256, (y * 13) % 256, (x + y) % 256, 255))
+            h = (x * 92821) ^ (y * 68917) ^ ((x + y) * 2654435761)
+            img.putpixel((x, y), (h & 0xFF, (h >> 8) & 0xFF, (h >> 16) & 0xFF, 255))
 
     result = _key_out_flat_background(img)
 
     assert result.getpixel((50, 50))[3] == 255
-    assert result.getpixel((99, 99))[3] == 255
+    assert result.getpixel((90, 90))[3] == 255
 
 
 @pytest.mark.parametrize(

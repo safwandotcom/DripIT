@@ -250,19 +250,74 @@ def _draw_price(draw: ImageDraw.ImageDraw, cx: float, cy: float, max_width: floa
     draw.text((start_x + price_w + gap, cy + 5), "TAKA", font=font_unit, fill=_MUTED, anchor="lm")
 
 
-def _key_out_flat_background(img: Image.Image, low: int = 12, high: int = 40) -> Image.Image:
-    """Catalog product photos (Under Armour, Nike, etc.) are almost always
-    shot on a uniform near-white/grey backdrop and saved as flat opaque
-    images, not with real transparency. Pasted as-is onto this banner's own
-    white ground, that backdrop shows up as a visible box around the
-    product. Sample the corner as the background color and fade out
-    anything close to it, so only the product itself stays opaque — this
-    also makes the drop shadow drawn from this same alpha trace the
-    product's silhouette instead of the whole rectangle."""
+def _estimate_border_background(rgb: Image.Image) -> Image.Image:
+    """Predicts the studio backdrop's color at every position, using only
+    the image's own border pixels — never anything from the interior. Real
+    catalog photos are rarely a single flat color: they typically carry a
+    soft vignette (e.g. brighter mid-frame, darker toward the corners), so
+    a single sampled corner pixel is a poor stand-in for "the background
+    color" everywhere else. This blends the four border edges across the
+    whole image (a standard bilinearly-blended/Coons-style patch: linear
+    interpolation between the matching pair of edges in each direction,
+    averaged, with the double-counted corner term removed), which follows
+    a smooth two-directional gradient far more closely than one fixed
+    sample — without ever looking at interior pixels, so a product with
+    its own smooth shading (a common case for a plain white sneaker) can
+    never influence what counts as "background" under it."""
+    w, h = rgb.size
+    top = [rgb.getpixel((x, 0)) for x in range(w)]
+    bottom = [rgb.getpixel((x, h - 1)) for x in range(w)]
+    left = [rgb.getpixel((0, y)) for y in range(h)]
+    right = [rgb.getpixel((w - 1, y)) for y in range(h)]
+    tl, tr, bl, br = top[0], top[-1], bottom[0], bottom[-1]
+
+    bg = Image.new("RGB", (w, h))
+    put = bg.putpixel
+    for y in range(h):
+        v = y / (h - 1) if h > 1 else 0.0
+        ly, ry = left[y], right[y]
+        for x in range(w):
+            u = x / (w - 1) if w > 1 else 0.0
+            tx, bx = top[x], bottom[x]
+            pixel = []
+            for c in range(3):
+                edges = (1 - v) * tx[c] + v * bx[c] + (1 - u) * ly[c] + u * ry[c]
+                corners = (1 - u) * (1 - v) * tl[c] + u * (1 - v) * tr[c] + (1 - u) * v * bl[c] + u * v * br[c]
+                pixel.append(max(0, min(255, round(edges - corners))))
+            put((x, y), tuple(pixel))
+    return bg
+
+
+def _key_out_flat_background(img: Image.Image, low: int = 12, high: int = 40, probe_size: int = 220) -> Image.Image:
+    """Catalog product photos (Under Armour, Nike, etc.) are almost never a
+    truly flat single color — real studio shots carry a soft vignette
+    across the backdrop, shading gradually away from whatever a single
+    sampled corner pixel happens to read. Comparing every pixel to one
+    fixed corner color (the old approach) leaves that gradient only
+    partially faded, which shows up as a visible ghost box around the
+    product once pasted onto a banner background of a different color.
+
+    Fades each pixel by its distance from the *predicted* background color
+    at its own position (see _estimate_border_background) instead of one
+    fixed sample, so a genuine backdrop gradient fades out fully. That
+    prediction is built only from the border, so — unlike walking inward
+    pixel-to-pixel — it can't be led astray into the product itself by the
+    product's own smooth shading (tried and reverted: a plain white/grey
+    product on a similarly light backdrop got silently eaten, since its
+    surface shading is just as gradual as the real background's). Computed
+    on a downscaled probe image for speed and upscaled back, which also
+    gives naturally anti-aliased edges."""
     rgb = img.convert("RGB")
-    bg_color = rgb.getpixel((0, 0))
-    distance = ImageChops.difference(rgb, Image.new("RGB", rgb.size, bg_color)).convert("L")
-    alpha = distance.point(lambda x: max(0, min(255, round((x - low) * 255 / (high - low)))))
+    w, h = rgb.size
+    scale = min(1.0, probe_size / max(w, h))
+    pw, ph = max(1, round(w * scale)), max(1, round(h * scale))
+    probe = rgb.resize((pw, ph), Image.Resampling.BILINEAR) if scale < 1.0 else rgb
+
+    predicted_bg = _estimate_border_background(probe)
+    distance = ImageChops.difference(probe, predicted_bg).convert("L")
+    probe_alpha = distance.point(lambda x: max(0, min(255, round((x - low) * 255 / (high - low)))))
+
+    alpha = probe_alpha.resize((w, h), Image.Resampling.BILINEAR) if scale < 1.0 else probe_alpha
     result = img.convert("RGBA")
     result.putalpha(ImageChops.darker(alpha, result.getchannel("A")))
     return result
