@@ -1082,6 +1082,7 @@ function GlobalStyles() {
           border: none; border-radius: 10px; font-size: 14px; cursor: pointer; text-align: left;
           margin-bottom: 2px; font-family: ${T.sans};
         }
+        .page-header { flex-wrap: wrap; gap: 10px; }
       }
     `}</style>
   );
@@ -1199,14 +1200,14 @@ function Header({ view, stats, company, currentCompany, setCurrentCompany }) {
   const t = titles[view] || titles.dashboard;
 
   return (
-    <header className="no-print" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: `1px solid ${T.borderSoft}`, paddingBottom: 18 }}>
+    <header className="no-print page-header" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: `1px solid ${T.borderSoft}`, paddingBottom: 18 }}>
       <div>
         <h1 style={{ fontFamily: T.serif, fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em', margin: 0, color: T.ink }}>{t.title}</h1>
         <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>{t.sub}</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <CompanySwitcher current={currentCompany} setCurrent={setCurrentCompany} />
-        <div style={{ fontSize: 12, color: T.muted, fontVariantNumeric: 'tabular-nums' }}>{new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</div>
+        <div className="desktop-only" style={{ fontSize: 12, color: T.muted, fontVariantNumeric: 'tabular-nums' }}>{new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</div>
       </div>
     </header>
   );
@@ -1232,7 +1233,7 @@ function CompanySwitcher({ current, setCurrent }) {
           <div style={{
             position: 'absolute', top: '100%', right: 0, marginTop: 6,
             background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10,
-            boxShadow: '0 10px 40px rgba(0,0,0,0.1)', minWidth: 220, zIndex: 50, overflow: 'hidden'
+            boxShadow: '0 10px 40px rgba(0,0,0,0.1)', minWidth: 220, maxWidth: 'calc(100vw - 28px)', zIndex: 50, overflow: 'hidden'
           }}>
             {Object.values(COMPANIES).map(c => (
               <button key={c.id} onClick={() => { setCurrent(c.id); setOpen(false); }} style={{
