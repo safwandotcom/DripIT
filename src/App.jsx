@@ -1095,6 +1095,7 @@ function GlobalStyles() {
         .npm-form-col { flex: 1 1 auto !important; width: 100% !important; }
         .npm-preview-box { width: 300px !important; height: 300px !important; }
         .npm-preview-inner { transform: scale(0.2778) !important; }
+        .mobile-static { position: static !important; }
       }
     `}</style>
   );
@@ -2337,13 +2338,13 @@ function OrderModal({ order, company, accounts, onClose, onUpdate, onDelete, onS
             <div className="pcg-card" style={{ marginBottom: 20 }}>
               <h4 style={{ fontFamily: T.serif, fontSize: 16, margin: '0 0 14px', fontWeight: 500 }}>Edit Order Details</h4>
               <Field label="Customer Name"><input className="pcg-input" value={form.customerName} onChange={e => setForm({ ...form, customerName: e.target.value })} /></Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
+              <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
                 <Field label="Phone"><input className="pcg-input" value={form.customerPhone || ''} onChange={e => setForm({ ...form, customerPhone: e.target.value })} /></Field>
                 <Field label="Order Date"><input className="pcg-input" type="date" value={fmtDateInput(form.orderDate)} onChange={e => setForm({ ...form, orderDate: new Date(e.target.value).toISOString() })} /></Field>
               </div>
               <Field label="Product (summary)" style={{ marginTop: 12 }}><input className="pcg-input" value={form.productName} onChange={e => setForm({ ...form, productName: e.target.value })} /></Field>
               <Field label="Description" style={{ marginTop: 12 }}><textarea className="pcg-input" rows={2} value={form.productDescription || ''} onChange={e => setForm({ ...form, productDescription: e.target.value })} /></Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, marginTop: 12 }}>
+              <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, marginTop: 12 }}>
                 <Field label="Total Cost (RM)"><input className="pcg-input" type="number" step="0.01" value={form.costPriceRM} onChange={e => setForm({ ...form, costPriceRM: e.target.value })} /></Field>
                 <Field label="Multiplier"><input className="pcg-input" type="number" step="0.5" min="1" value={form.multiplier || COST_MULTIPLIER} onChange={e => setForm({ ...form, multiplier: e.target.value })} /></Field>
               </div>
@@ -2357,7 +2358,7 @@ function OrderModal({ order, company, accounts, onClose, onUpdate, onDelete, onS
             </div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+              <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
                 <InfoBlock icon={Phone} label="Phone" value={order.customerPhone || '—'} />
                 <InfoBlock icon={Calendar} label="Order Date" value={fmtDate(order.orderDate)} />
               </div>
@@ -2393,7 +2394,7 @@ function OrderModal({ order, company, accounts, onClose, onUpdate, onDelete, onS
               )}
 
               <div className="pcg-card" style={{ marginBottom: 20 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+                <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
                   <PriceStat label="Cost" value={fmtRM(c.cost)} />
                   <PriceStat label="Selling" value={fmtBDT(c.selling)} highlight />
                   <PriceStat label="Multiplier" value={`× ${c.multiplier}`} sub={c.multiplier === COST_MULTIPLIER ? 'default' : 'custom for this order'} />
@@ -2468,7 +2469,7 @@ function OrderModal({ order, company, accounts, onClose, onUpdate, onDelete, onS
 
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Quick Messages</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <MessageButton label="Advance Request" onClick={() => onShowMessage('advance')} />
               <MessageButton label="Order Confirmed" onClick={() => onShowMessage('confirmed')} />
               <MessageButton label="Reached Bangladesh" onClick={() => onShowMessage('reachedBD')} />
@@ -2564,14 +2565,14 @@ function Expenses({ expenses, accounts, onAdd, onDelete, onEdit, stats }) {
   const onCurrencyChange = (cur) => setForm({ ...form, currency: cur, account: defaultAcc(cur) });
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 18 }}>
+    <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 18 }}>
       <div>
-        <div className="pcg-card" style={{ position: 'sticky', top: 20 }}>
+        <div className="pcg-card mobile-static" style={{ position: 'sticky', top: 20 }}>
           <h3 style={{ fontFamily: T.serif, fontSize: 18, margin: '0 0 6px', fontWeight: 500 }}>Record Expense</h3>
           <div style={{ fontSize: 12, color: T.muted, marginBottom: 18 }}>Auto-deducts from the chosen account in your books.</div>
           <form onSubmit={submit}>
             <Field label="Description"><input className="pcg-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="e.g. Courier to Bangladesh" /></Field>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 10, marginTop: 12 }}>
+            <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 10, marginTop: 12 }}>
               <Field label="Amount"><input className="pcg-input" type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} placeholder="0.00" /></Field>
               <Field label="Currency"><select className="pcg-input" value={form.currency} onChange={e => onCurrencyChange(e.target.value)}><option>RM</option><option>BDT</option></select></Field>
             </div>
@@ -2635,7 +2636,7 @@ function ExpenseEditModal({ expense, accounts, onClose, onSave }) {
   return (
     <EditModal title="Edit Expense" onClose={onClose} onSave={() => onSave({ ...f, amount: parseFloat(f.amount), date: new Date(f.date).toISOString() })}>
       <Field label="Description"><input className="pcg-input" value={f.description} onChange={e => setF({ ...f, description: e.target.value })} /></Field>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 10, marginTop: 12 }}>
+      <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 10, marginTop: 12 }}>
         <Field label="Amount"><input className="pcg-input" type="number" step="0.01" value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} /></Field>
         <Field label="Currency"><select className="pcg-input" value={f.currency} onChange={e => setF({ ...f, currency: e.target.value })}><option>RM</option><option>BDT</option></select></Field>
       </div>
@@ -2747,7 +2748,7 @@ function BooksOverview({ accounts, ledger, loans, orders, onOpenOrder }) {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+      <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
         <div className="pcg-card">
           <h3 style={{ fontFamily: T.serif, fontSize: 17, margin: '0 0 14px', fontWeight: 500 }}>Account Balances</h3>
           {accountBalances.length === 0 ? <EmptyState text="No accounts yet." /> : accountBalances.map((a, i) => (
@@ -2806,7 +2807,7 @@ function BooksOverview({ accounts, ledger, loans, orders, onOpenOrder }) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+      <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <PayableReceivableCard title="Payables (You Owe)" icon={ArrowDownRight} color={T.warning} items={payables} emptyText="No open payables." />
         <PayableReceivableCard title="Loan Receivables (Owed to You)" icon={ArrowUpRight} color={T.olive} items={receivables} emptyText="No open loan receivables." />
       </div>
@@ -2944,7 +2945,7 @@ function ProfitView({ orders, expenses, ledger, settings, setSettings, onOwnerDr
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 14 }}>
+      <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 14 }}>
         {/* Profit breakdown */}
         <div className="pcg-card">
           <h4 style={{ fontFamily: T.serif, fontSize: 17, margin: '0 0 14px', fontWeight: 500 }}>Breakdown</h4>
@@ -3080,7 +3081,7 @@ function OrderPaymentModal({ prompt, accounts, onCancel, onConfirm }) {
                     </button>
                   </div>
                 )}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <Field label="Amount (BDT)">
                     <input className="pcg-input" type="number" step="0.01" value={s.amount} onChange={e => updateSplit(s.id, 'amount', e.target.value)} style={{ fontFamily: T.serif, fontSize: 16 }} />
                   </Field>
@@ -3158,7 +3159,7 @@ function OwnerDrawModal({ accounts, onCancel, onConfirm }) {
           <div style={{ fontSize: 12.5, color: T.muted, marginTop: 4 }}>Money you're taking out of the business as profit.</div>
         </div>
         <div style={{ padding: 22 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="Amount (BDT)"><input className="pcg-input" type="number" step="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} style={{ fontFamily: T.serif, fontSize: 18 }} /></Field>
             <Field label="Date"><input className="pcg-input" type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Field>
           </div>
@@ -3294,13 +3295,13 @@ function TransferView({ accounts, ledger, onTransfer }) {
 
   return (
     <form onSubmit={submit}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 18 }}>
+      <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 18 }}>
         <div className="pcg-card">
           <h3 style={{ fontFamily: T.serif, fontSize: 19, margin: '0 0 6px', fontWeight: 500 }}>Transfer Between Accounts</h3>
           <div style={{ fontSize: 12.5, color: T.muted, marginBottom: 18 }}>Move money between any two accounts — same currency or BDT ⇄ RM with a rate. Creates one out-entry and one in-entry automatically.</div>
 
           <Section title="From and To">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 40px 1fr', gap: 10, alignItems: 'end' }}>
+            <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 40px 1fr', gap: 10, alignItems: 'end' }}>
               <Field label="From Account">
                 <select className="pcg-input" value={form.fromAccount} onChange={e => setForm({ ...form, fromAccount: e.target.value })}>
                   {accounts.map(a => <option key={a.id} value={a.name}>{a.name} ({a.currency || 'BDT'})</option>)}
@@ -3324,7 +3325,7 @@ function TransferView({ accounts, ledger, onTransfer }) {
 
           <Section title={isCrossCurrency ? 'Amounts & Rate' : 'Amount'}>
             {isCrossCurrency ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 1fr', gap: 10, alignItems: 'end' }}>
+              <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 100px 1fr', gap: 10, alignItems: 'end' }}>
                 <Field label={`From (${fromCurrency})`}>
                   <input className="pcg-input" type="number" step="0.01" min="0" value={form.fromAmount} onChange={e => setForm({ ...form, fromAmount: e.target.value })} style={{ fontFamily: T.serif, fontSize: 17 }} />
                 </Field>
@@ -3350,7 +3351,7 @@ function TransferView({ accounts, ledger, onTransfer }) {
           </Section>
 
           <Section title="Transfer Fee (optional)">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <Field label="Fee Amount">
                 <input className="pcg-input" type="number" step="0.01" min="0" value={form.fee} onChange={e => setForm({ ...form, fee: e.target.value })} placeholder="0.00" />
               </Field>
@@ -3368,7 +3369,7 @@ function TransferView({ accounts, ledger, onTransfer }) {
           </Section>
 
           <Section title="Details" last>
-            <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 10 }}>
+            <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 10 }}>
               <Field label="Date"><input className="pcg-input" type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Field>
               <Field label="Notes (optional)"><input className="pcg-input" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="e.g. Wise transfer ref ABC123" /></Field>
             </div>
@@ -3383,7 +3384,7 @@ function TransferView({ accounts, ledger, onTransfer }) {
 
         {/* Live balance preview */}
         <div>
-          <div className="pcg-card" style={{ position: 'sticky', top: 20 }}>
+          <div className="pcg-card mobile-static" style={{ position: 'sticky', top: 20 }}>
             <h4 style={{ fontFamily: T.serif, fontSize: 17, margin: '0 0 14px', fontWeight: 500 }}>Balance Preview</h4>
 
             <div style={{ padding: '12px 0', borderBottom: `1px solid ${T.borderSoft}` }}>
@@ -3450,7 +3451,7 @@ function Transactions({ ledger, accounts, onAdd, onEdit, onDelete }) {
 
       {show && (
         <form onSubmit={submit} className="pcg-card fade-in" style={{ marginBottom: 14 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
             <Field label="Date"><input className="pcg-input" type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Field>
             <Field label="Direction"><select className="pcg-input" value={form.direction} onChange={e => setForm({ ...form, direction: e.target.value })}><option value="in">Money In</option><option value="out">Money Out</option></select></Field>
             <Field label="Type"><input className="pcg-input" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} placeholder="e.g. Sale, Expense" /></Field>
@@ -3470,11 +3471,11 @@ function Transactions({ ledger, accounts, onAdd, onEdit, onDelete }) {
       <div className="pcg-card" style={{ padding: 0, overflow: 'hidden' }}>
         {ledger.length === 0 ? <div style={{ padding: 36 }}><EmptyState text="No transactions yet." /></div> : (
           <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '100px 80px 1fr 1fr 130px 90px', padding: '12px 18px', borderBottom: `1px solid ${T.borderSoft}`, fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>
+            <div className="desktop-only" style={{ display: 'grid', gridTemplateColumns: '100px 80px 1fr 1fr 130px 90px', padding: '12px 18px', borderBottom: `1px solid ${T.borderSoft}`, fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>
               <div>Date</div><div>Type</div><div>Account / Party</div><div>Description</div><div style={{ textAlign: 'right' }}>Amount</div><div></div>
             </div>
             {ledger.map(l => (
-              <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '100px 80px 1fr 1fr 130px 90px', padding: '12px 18px', borderBottom: `1px solid ${T.borderSoft}`, alignItems: 'center', fontSize: 13 }}>
+              <div key={l.id} className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '100px 80px 1fr 1fr 130px 90px', padding: '12px 18px', borderBottom: `1px solid ${T.borderSoft}`, alignItems: 'center', fontSize: 13 }}>
                 <div style={{ color: T.muted }}>{fmtDateShort(l.date)}</div>
                 <div>
                   <span style={{ display: 'inline-block', padding: '2px 7px', borderRadius: 4, background: l.direction === 'in' ? T.success + '20' : T.terracotta + '20', color: l.direction === 'in' ? T.success : T.terracotta, fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase' }}>
@@ -3503,7 +3504,7 @@ function LedgerEditModal({ entry, accounts, onClose, onSave }) {
   const [f, setF] = useState({ ...entry, date: fmtDateInput(entry.date) });
   return (
     <EditModal title="Edit Transaction" onClose={onClose} onSave={() => onSave({ ...f, amount: parseFloat(f.amount), date: new Date(f.date).toISOString() })}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+      <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <Field label="Date"><input className="pcg-input" type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Direction"><select className="pcg-input" value={f.direction} onChange={e => setF({ ...f, direction: e.target.value })}><option value="in">In</option><option value="out">Out</option></select></Field>
         <Field label="Type"><input className="pcg-input" value={f.type} onChange={e => setF({ ...f, type: e.target.value })} /></Field>
@@ -3536,7 +3537,7 @@ function Loans({ loans, onAdd, onEdit, onDelete, onRepay }) {
 
       {show && (
         <form onSubmit={submit} className="pcg-card fade-in" style={{ marginBottom: 14 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
             <Field label="Type"><select className="pcg-input" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}><option value="taken">Loan Taken (I owe)</option><option value="given">Loan Given (Owed to me)</option></select></Field>
             <Field label="Party Name *"><input className="pcg-input" value={form.party} onChange={e => setForm({ ...form, party: e.target.value })} required placeholder="Person or company" /></Field>
             <Field label="Principal *"><input className="pcg-input" type="number" step="0.01" value={form.principal} onChange={e => setForm({ ...form, principal: e.target.value })} required /></Field>
@@ -3553,7 +3554,7 @@ function Loans({ loans, onAdd, onEdit, onDelete, onRepay }) {
         </form>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+      <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <LoanList title="Loans Taken (Payables)" loans={loans.filter(l => l.type === 'taken')} onEdit={onEdit} onDelete={onDelete} onRepay={onRepay} color={T.warning} />
         <LoanList title="Loans Given (Receivables)" loans={loans.filter(l => l.type === 'given')} onEdit={onEdit} onDelete={onDelete} onRepay={onRepay} color={T.olive} />
       </div>
@@ -3606,7 +3607,7 @@ function LoanEditModal({ loan, onClose, onSave, onRepay }) {
 
   return (
     <EditModal title="Edit Loan" onClose={onClose} onSave={() => onSave({ ...f, principal: parseFloat(f.principal), date: new Date(f.date).toISOString(), dueDate: f.dueDate ? new Date(f.dueDate).toISOString() : null })}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+      <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <Field label="Type"><select className="pcg-input" value={f.type} onChange={e => setF({ ...f, type: e.target.value })}><option value="taken">Taken</option><option value="given">Given</option></select></Field>
         <Field label="Party"><input className="pcg-input" value={f.party} onChange={e => setF({ ...f, party: e.target.value })} /></Field>
         <Field label="Principal"><input className="pcg-input" type="number" value={f.principal} onChange={e => setF({ ...f, principal: e.target.value })} /></Field>
@@ -3620,7 +3621,7 @@ function LoanEditModal({ loan, onClose, onSave, onRepay }) {
       {loan.status === 'open' && remaining > 0 && (
         <div style={{ marginTop: 18, padding: 14, background: T.cream, borderRadius: 10 }}>
           <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 10 }}>Record a Repayment</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
+          <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
             <Field label={`Amount (max ${fmtMoney(remaining, loan.currency)})`}><input className="pcg-input" type="number" step="0.01" value={repayAmt} onChange={e => setRepayAmt(e.target.value)} /></Field>
             <Field label="Date"><input className="pcg-input" type="date" value={repayDate} onChange={e => setRepayDate(e.target.value)} /></Field>
             <button type="button" className="pcg-btn" onClick={() => { if (repayAmt) { onRepay(repayAmt, new Date(repayDate).toISOString()); } }}>Record</button>
@@ -3650,7 +3651,7 @@ function Accounts({ accounts, ledger, onAdd, onEdit, onDelete }) {
 
       {show && (
         <form onSubmit={submit} className="pcg-card fade-in" style={{ marginBottom: 14 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
             <Field label="Account Name"><input className="pcg-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required placeholder="e.g. Bank — DBBL" /></Field>
             <Field label="Type"><select className="pcg-input" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}><option>Bank</option><option>bKash</option><option>Cash</option><option>Other</option></select></Field>
             <Field label="Opening Balance"><input className="pcg-input" type="number" step="0.01" value={form.openingBalance} onChange={e => setForm({ ...form, openingBalance: e.target.value })} /></Field>
@@ -3692,7 +3693,7 @@ function AccountEditModal({ account, onClose, onSave }) {
   return (
     <EditModal title="Edit Account" onClose={onClose} onSave={() => onSave({ ...f, openingBalance: parseFloat(f.openingBalance) })}>
       <Field label="Account Name"><input className="pcg-input" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} /></Field>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginTop: 12 }}>
+      <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginTop: 12 }}>
         <Field label="Type"><select className="pcg-input" value={f.type} onChange={e => setF({ ...f, type: e.target.value })}><option>Bank</option><option>bKash</option><option>Cash</option><option>Other</option></select></Field>
         <Field label="Opening Balance"><input className="pcg-input" type="number" step="0.01" value={f.openingBalance} onChange={e => setF({ ...f, openingBalance: e.target.value })} /></Field>
         <Field label="Currency"><select className="pcg-input" value={f.currency} onChange={e => setF({ ...f, currency: e.target.value })}><option>BDT</option><option>RM</option></select></Field>
@@ -3731,14 +3732,14 @@ function Receipts({ orders, ledger, company, onShowReceipt, onOpenOrder }) {
       <div className="pcg-card" style={{ padding: 0, overflow: 'hidden' }}>
         {deliveredOrders.length === 0 ? <div style={{ padding: 36 }}><EmptyState text={orders.length === 0 ? "No orders yet." : "No delivered orders yet. Paid receipts appear here automatically when orders are delivered."} /></div> : (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: '170px 140px 1fr 160px 140px 130px', padding: '12px 18px', borderBottom: `1px solid ${T.borderSoft}`, fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
+            <div className="desktop-only" style={{ display: 'grid', gridTemplateColumns: '170px 140px 1fr 160px 140px 130px', padding: '12px 18px', borderBottom: `1px solid ${T.borderSoft}`, fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
               <div>Receipt #</div><div>Order #</div><div>Customer</div><div>Total Paid</div><div>Delivered On</div><div></div>
             </div>
             {deliveredOrders.map(o => {
               const pays = paymentsFor(o.id);
               const totalPaid = pays.reduce((s, p) => s + parseFloat(p.amount || 0), 0) || calcOrder(o).selling;
               return (
-                <div key={o.id} className="pcg-row" style={{ display: 'grid', gridTemplateColumns: '170px 140px 1fr 160px 140px 130px', padding: '14px 18px', borderBottom: `1px solid ${T.borderSoft}`, alignItems: 'center', fontSize: 13.5 }}>
+                <div key={o.id} className="pcg-row field-grid-2" style={{ display: 'grid', gridTemplateColumns: '170px 140px 1fr 160px 140px 130px', padding: '14px 18px', borderBottom: `1px solid ${T.borderSoft}`, alignItems: 'center', fontSize: 13.5 }}>
                   <div style={{ fontFamily: T.serif, fontWeight: 600 }}>RCP-{o.orderNumber}</div>
                   <div style={{ fontFamily: T.sans, fontWeight: 500, color: T.muted }}>{o.orderNumber}</div>
                   <div>
@@ -3790,11 +3791,11 @@ function InvoiceList({ invoices, onPrint, onDelete }) {
     <div className="pcg-card" style={{ padding: 0, overflow: 'hidden' }}>
       {invoices.length === 0 ? <div style={{ padding: 36 }}><EmptyState text="No invoices yet. Click 'Create Invoice' to start." /></div> : (
         <div>
-          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 100px 130px 110px', padding: '12px 18px', borderBottom: `1px solid ${T.borderSoft}`, fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>
+          <div className="desktop-only" style={{ display: 'grid', gridTemplateColumns: '160px 1fr 100px 130px 110px', padding: '12px 18px', borderBottom: `1px solid ${T.borderSoft}`, fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>
             <div>Invoice #</div><div>Customer</div><div>Items</div><div style={{ textAlign: 'right' }}>Total</div><div></div>
           </div>
           {invoices.map(inv => (
-            <div key={inv.id} className="pcg-row" onClick={() => onPrint(inv)} style={{ display: 'grid', gridTemplateColumns: '160px 1fr 100px 130px 110px', padding: '14px 18px', borderBottom: `1px solid ${T.borderSoft}`, alignItems: 'center', fontSize: 13 }}>
+            <div key={inv.id} className="pcg-row field-grid-2" onClick={() => onPrint(inv)} style={{ display: 'grid', gridTemplateColumns: '160px 1fr 100px 130px 110px', padding: '14px 18px', borderBottom: `1px solid ${T.borderSoft}`, alignItems: 'center', fontSize: 13 }}>
               <div>
                 <div style={{ fontFamily: T.serif, fontWeight: 500 }}>{inv.invoiceNumber}</div>
                 <div style={{ fontSize: 11.5, color: T.muted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -3864,10 +3865,10 @@ function NewInvoice({ onSubmit, company }) {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 18 }}>
+    <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 18 }}>
       <div className="pcg-card">
         <Section title="Customer">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <Field label="Name *"><input className="pcg-input" value={customer.name} onChange={e => setCustomer({ ...customer, name: e.target.value })} /></Field>
             <Field label="Phone"><input className="pcg-input" value={customer.phone} onChange={e => setCustomer({ ...customer, phone: e.target.value })} /></Field>
           </div>
@@ -3875,13 +3876,13 @@ function NewInvoice({ onSubmit, company }) {
         </Section>
 
         <Section title={`Items (rate: ${rate} BDT per RM)`}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 70px 70px 110px 32px', gap: 8, marginBottom: 8, fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, padding: '0 4px' }}>
+          <div className="desktop-only" style={{ display: 'grid', gridTemplateColumns: '1fr 80px 70px 70px 110px 32px', gap: 8, marginBottom: 8, fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, padding: '0 4px' }}>
             <div>Item Name</div><div>RM</div><div>Rate</div><div>Qty</div><div style={{ textAlign: 'right' }}>Total (BDT)</div><div></div>
           </div>
           {items.map(i => {
             const total = (parseFloat(i.costRM) || 0) * (parseFloat(i.rate) || 0) * (parseFloat(i.qty) || 1);
             return (
-              <div key={i.id} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 70px 70px 110px 32px', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+              <div key={i.id} className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 80px 70px 70px 110px 32px', gap: 8, marginBottom: 8, alignItems: 'center' }}>
                 <input className="pcg-input" value={i.name} onChange={e => updateItem(i.id, 'name', e.target.value)} placeholder="Item name" />
                 <input className="pcg-input" type="number" step="0.01" value={i.costRM} onChange={e => updateItem(i.id, 'costRM', e.target.value)} placeholder="0" />
                 <input className="pcg-input" type="number" step="0.01" value={i.rate} onChange={e => updateItem(i.id, 'rate', e.target.value)} />
@@ -3895,7 +3896,7 @@ function NewInvoice({ onSubmit, company }) {
         </Section>
 
         <Section title="Discount & Notes" last>
-          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 10 }}>
+          <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 10 }}>
             <Field label="Discount (BDT)"><input className="pcg-input" type="number" step="0.01" value={discount} onChange={e => setDiscount(e.target.value)} /></Field>
             <Field label="Notes"><input className="pcg-input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional message on invoice" /></Field>
           </div>
@@ -3908,7 +3909,7 @@ function NewInvoice({ onSubmit, company }) {
       </div>
 
       <div>
-        <div className="pcg-card" style={{ position: 'sticky', top: 20, background: T.ink, color: T.cream, border: 'none' }}>
+        <div className="pcg-card mobile-static" style={{ position: 'sticky', top: 20, background: T.ink, color: T.cream, border: 'none' }}>
           <div style={{ fontSize: 11, color: T.cream + '99', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 500 }}>Invoice Total</div>
           <div style={{ fontFamily: T.serif, fontSize: 36, fontWeight: 500, letterSpacing: '-0.02em', margin: '8px 0 4px', fontVariantNumeric: 'tabular-nums' }}>{fmtBDT(total)}</div>
           <div style={{ fontSize: 12, color: T.cream + 'AA', marginBottom: 16 }}>{company.displayName} · {itemsWithTotals.filter(i => i.totalBDT > 0).length} item{itemsWithTotals.filter(i => i.totalBDT > 0).length !== 1 ? 's' : ''}</div>
@@ -3940,7 +3941,7 @@ function InvoicePrintModal({ invoice, company, onClose, onUpdate }) {
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,15,15,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, backdropFilter: 'blur(6px)', padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: T.cream, borderRadius: 14, width: '100%', maxWidth: 720, maxHeight: '92vh', overflowY: 'auto' }}>
+      <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: T.cream, borderRadius: 14, width: '100%', maxWidth: 720, maxHeight: '92vh', overflow: 'auto' }}>
         <div className="no-print" style={{ padding: '16px 22px', borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 5 }}>
           <h3 style={{ fontFamily: T.serif, fontSize: 19, margin: 0, fontWeight: 500 }}>Invoice {invoice.invoiceNumber}</h3>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -3954,7 +3955,7 @@ function InvoicePrintModal({ invoice, company, onClose, onUpdate }) {
         {editMode ? (
           <div style={{ padding: 22 }}>
             <Field label="Customer Name"><input className="pcg-input" value={form.customer?.name || ''} onChange={e => setForm({ ...form, customer: { ...form.customer, name: e.target.value } })} /></Field>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+            <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
               <Field label="Phone"><input className="pcg-input" value={form.customer?.phone || ''} onChange={e => setForm({ ...form, customer: { ...form.customer, phone: e.target.value } })} /></Field>
               <Field label="Address"><input className="pcg-input" value={form.customer?.address || ''} onChange={e => setForm({ ...form, customer: { ...form.customer, address: e.target.value } })} /></Field>
             </div>
@@ -4115,7 +4116,7 @@ function ReceiptPrintModal({ order, payments, company, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,15,15,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, backdropFilter: 'blur(6px)', padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: T.cream, borderRadius: 14, width: '100%', maxWidth: 720, maxHeight: '92vh', overflowY: 'auto' }}>
+      <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: T.cream, borderRadius: 14, width: '100%', maxWidth: 720, maxHeight: '92vh', overflow: 'auto' }}>
         <div className="no-print" style={{ padding: '16px 22px', borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 5 }}>
           <div>
             <h3 style={{ fontFamily: T.serif, fontSize: 19, margin: 0, fontWeight: 500 }}>Paid Receipt · {receiptNumber}</h3>
