@@ -945,7 +945,7 @@ export default function App() {
 
       <div style={{ display: 'flex', minHeight: '100vh' }}>
         <Sidebar view={view} setView={handleNavRequest} />
-        <main style={{ flex: 1, padding: '28px 36px', maxWidth: 'calc(100vw - 240px)' }}>
+        <main className="app-main" style={{ flex: 1, padding: '28px 36px', maxWidth: 'calc(100vw - 240px)' }}>
           <Header view={view} stats={stats} company={company} currentCompany={currentCompany} setCurrentCompany={setCurrentCompany} />
           <div className="fade-in" key={view + currentCompany} style={{ marginTop: 24 }}>
             {view === 'dashboard' && <Dashboard stats={stats} orders={cOrders} loans={cLoans} accounts={cAccounts} ledger={cLedger} onOpenOrder={setSelectedOrder} />}
@@ -1043,6 +1043,16 @@ function GlobalStyles() {
         .no-print { display: none !important; }
         @page { size: A4 portrait; margin: 12mm 15mm; }
       }
+      @media (max-width: 768px) {
+        :root { --bottom-nav-height: 62px; }
+        .desktop-only { display: none !important; }
+        .mobile-only { display: block; }
+        .app-main {
+          padding: 16px !important;
+          max-width: 100% !important;
+          padding-bottom: calc(var(--bottom-nav-height) + 16px) !important;
+        }
+      }
     `}</style>
   );
 }
@@ -1065,7 +1075,7 @@ function Sidebar({ view, setView, pendingNavigate, onConfirmNavigate, onCancelNa
   ];
 
   return (
-    <aside className="no-print" style={{ width: 240, background: T.surface, borderRight: `1px solid ${T.borderSoft}`, padding: '24px 14px', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto' }}>
+    <aside className="no-print desktop-only" style={{ width: 240, background: T.surface, borderRight: `1px solid ${T.borderSoft}`, padding: '24px 14px', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto' }}>
       <div style={{ padding: '0 8px 24px', borderBottom: `1px solid ${T.borderSoft}`, marginBottom: 18 }}>
         <div style={{ fontFamily: T.display, fontSize: 24, fontWeight: 700, letterSpacing: '-0.04em', color: T.ink }}>
           PRE<span style={{ color: T.paidRed }}>·</span>ORDER
