@@ -5,7 +5,7 @@ import {
   Download, Trash2, ChevronRight, ChevronDown, AlertCircle, MessageSquare,
   Calendar, Phone, MapPin, FileSpreadsheet, BookOpen, FileText,
   Edit3, Printer, QrCode, ArrowUpRight, ArrowDownRight, Building2,
-  Banknote, Landmark, ArrowLeftRight, Pencil, Save, Eye, Upload, ImagePlus
+  Banknote, Landmark, ArrowLeftRight, Pencil, Save, Eye, Upload, ImagePlus, MoreHorizontal
 } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -911,6 +911,7 @@ export default function App() {
   // ── Navigation guard for PostMaker ── (must be before any early return)
   const [pendingNav, setPendingNav] = useState(null);
   const [showNavGuard, setShowNavGuard] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const handleNavRequest = (targetView) => {
     if (view === 'postmaker') { setPendingNav(targetView); setShowNavGuard(true); }
     else setView(targetView);
@@ -945,6 +946,8 @@ export default function App() {
 
       <div style={{ display: 'flex', minHeight: '100vh' }}>
         <Sidebar view={view} setView={handleNavRequest} />
+        <BottomNav view={view} setView={handleNavRequest} onMore={() => setMoreOpen(true)} />
+        <MoreSheet open={moreOpen} onClose={() => setMoreOpen(false)} view={view} setView={handleNavRequest} />
         <main className="app-main" style={{ flex: 1, padding: '28px 36px', maxWidth: 'calc(100vw - 240px)' }}>
           <Header view={view} stats={stats} company={company} currentCompany={currentCompany} setCurrentCompany={setCurrentCompany} />
           <div className="fade-in" key={view + currentCompany} style={{ marginTop: 24 }}>
@@ -1052,6 +1055,32 @@ function GlobalStyles() {
           max-width: 100% !important;
           padding-bottom: calc(var(--bottom-nav-height) + 16px) !important;
         }
+        .bottom-nav {
+          display: flex; position: fixed; left: 0; right: 0; bottom: 0;
+          background: ${T.surface}; border-top: 1px solid ${T.borderSoft};
+          height: var(--bottom-nav-height); z-index: 60;
+          padding-bottom: env(safe-area-inset-bottom, 0);
+        }
+        .bottom-nav-btn {
+          flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+          gap: 2px; background: none; border: none; font-size: 10px; font-weight: 500;
+          font-family: ${T.sans}; cursor: pointer; padding: 6px 0;
+        }
+        .more-sheet-backdrop {
+          position: fixed; inset: 0; background: rgba(15,15,15,0.45); z-index: 70;
+          display: flex; align-items: flex-end;
+        }
+        .more-sheet {
+          background: ${T.surface}; width: 100%; border-radius: 16px 16px 0 0;
+          padding: 10px 14px calc(var(--bottom-nav-height) + 14px);
+          max-height: 70vh; overflow-y: auto;
+        }
+        .more-sheet-handle { width: 36px; height: 4px; background: ${T.border}; border-radius: 2px; margin: 6px auto 14px; }
+        .more-sheet-item {
+          display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 12px;
+          border: none; border-radius: 10px; font-size: 14px; cursor: pointer; text-align: left;
+          margin-bottom: 2px; font-family: ${T.sans};
+        }
       }
     `}</style>
   );
@@ -1060,19 +1089,25 @@ function GlobalStyles() {
 // ═══════════════════════════════════════════════════════════════════
 // SIDEBAR & HEADER
 // ═══════════════════════════════════════════════════════════════════
+const NAV_ITEMS = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'orders', label: 'Orders', icon: ShoppingBag },
+  { id: 'new', label: 'New Order', icon: Plus },
+  { id: 'invoices', label: 'Sales Invoice', icon: FileText },
+  { id: 'receipts', label: 'Paid Receipts', icon: CheckCircle2 },
+  { id: 'expenses', label: 'Expenses', icon: Receipt },
+  { id: 'books', label: 'Books & Ledger', icon: BookOpen },
+  { id: 'postmaker', label: 'Post Maker', icon: QrCode },
+  { id: 'newpostmaker', label: 'New Post Maker', icon: ImagePlus },
+  { id: 'export', label: 'Export & Sync', icon: FileSpreadsheet }
+];
+
+// Bottom nav shows these 4; everything else in NAV_ITEMS lives in the
+// "More" sheet. Keep this list in sync if NAV_ITEMS' most-used items change.
+const BOTTOM_NAV_IDS = ['dashboard', 'orders', 'new', 'books'];
+
 function Sidebar({ view, setView, pendingNavigate, onConfirmNavigate, onCancelNavigate }) {
-  const items = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'orders', label: 'Orders', icon: ShoppingBag },
-    { id: 'new', label: 'New Order', icon: Plus },
-    { id: 'invoices', label: 'Sales Invoice', icon: FileText },
-    { id: 'receipts', label: 'Paid Receipts', icon: CheckCircle2 },
-    { id: 'expenses', label: 'Expenses', icon: Receipt },
-    { id: 'books', label: 'Books & Ledger', icon: BookOpen },
-    { id: 'postmaker', label: 'Post Maker', icon: QrCode },
-    { id: 'newpostmaker', label: 'New Post Maker', icon: ImagePlus },
-    { id: 'export', label: 'Export & Sync', icon: FileSpreadsheet }
-  ];
+  const items = NAV_ITEMS;
 
   return (
     <aside className="no-print desktop-only" style={{ width: 240, background: T.surface, borderRight: `1px solid ${T.borderSoft}`, padding: '24px 14px', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto' }}>
@@ -1102,6 +1137,50 @@ function Sidebar({ view, setView, pendingNavigate, onConfirmNavigate, onCancelNa
   );
 }
 
+function BottomNav({ view, setView, onMore }) {
+  const items = BOTTOM_NAV_IDS.map(id => NAV_ITEMS.find(i => i.id === id));
+  return (
+    <nav className="mobile-only bottom-nav">
+      {items.map(({ id, label, icon: Icon }) => (
+        <button
+          key={id}
+          onClick={() => setView(id)}
+          className="bottom-nav-btn"
+          style={{ color: view === id ? T.terracotta : T.muted }}
+        >
+          <Icon size={20} strokeWidth={view === id ? 2.25 : 1.75} />
+          <span>{id === 'new' ? 'New' : label}</span>
+        </button>
+      ))}
+      <button onClick={onMore} className="bottom-nav-btn" style={{ color: T.muted }}>
+        <MoreHorizontal size={20} strokeWidth={1.75} />
+        <span>More</span>
+      </button>
+    </nav>
+  );
+}
+
+function MoreSheet({ open, onClose, view, setView }) {
+  if (!open) return null;
+  const items = NAV_ITEMS.filter(i => !BOTTOM_NAV_IDS.includes(i.id));
+  return (
+    <div className="mobile-only more-sheet-backdrop" onClick={onClose}>
+      <div className="more-sheet" onClick={e => e.stopPropagation()}>
+        <div className="more-sheet-handle" />
+        {items.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => { setView(id); onClose(); }}
+            className="more-sheet-item"
+            style={{ color: view === id ? T.ink : T.muted, background: view === id ? T.cream : 'transparent' }}
+          >
+            <Icon size={17} strokeWidth={1.75} /> {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function Header({ view, stats, company, currentCompany, setCurrentCompany }) {
   const titles = {
