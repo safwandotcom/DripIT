@@ -1084,6 +1084,8 @@ function GlobalStyles() {
         }
         .page-header { flex-wrap: wrap; gap: 10px; }
         .dashboard-split { grid-template-columns: 1fr !important; }
+        .order-modal-header { padding: 14px 16px !important; }
+        .order-modal-body { padding: 16px !important; }
       }
     `}</style>
   );
@@ -2292,7 +2294,7 @@ function OrderModal({ order, company, accounts, onClose, onUpdate, onDelete, onS
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,15,15,0.45)', display: 'flex', justifyContent: 'flex-end', zIndex: 100, backdropFilter: 'blur(4px)' }}>
       <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: T.cream, width: '100%', maxWidth: 620, height: '100vh', overflowY: 'auto', boxShadow: '-20px 0 60px rgba(0,0,0,0.15)' }}>
-        <div style={{ padding: '20px 28px', borderBottom: `1px solid ${T.border}`, background: T.surface, position: 'sticky', top: 0, zIndex: 10 }}>
+        <div className="order-modal-header" style={{ padding: '20px 28px', borderBottom: `1px solid ${T.border}`, background: T.surface, position: 'sticky', top: 0, zIndex: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
             <div>
               <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>{order.orderNumber}</div>
@@ -2320,7 +2322,7 @@ function OrderModal({ order, company, accounts, onClose, onUpdate, onDelete, onS
           </div>
         </div>
 
-        <div style={{ padding: '22px 28px' }}>
+        <div className="order-modal-body" style={{ padding: '22px 28px' }}>
           {editMode ? (
             <div className="pcg-card" style={{ marginBottom: 20 }}>
               <h4 style={{ fontFamily: T.serif, fontSize: 16, margin: '0 0 14px', fontWeight: 500 }}>Edit Order Details</h4>
