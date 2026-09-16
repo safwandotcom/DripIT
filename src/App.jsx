@@ -1065,7 +1065,7 @@ function GlobalStyles() {
         .bottom-nav-btn {
           flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
           gap: 2px; background: none; border: none; font-size: 10px; font-weight: 500;
-          font-family: ${T.sans}; cursor: pointer; padding: 6px 0;
+          font-family: ${T.sans}; cursor: pointer; padding: 6px 0; white-space: nowrap;
         }
         .more-sheet-backdrop {
           position: fixed; inset: 0; background: rgba(15,15,15,0.45); z-index: 70;
@@ -1086,6 +1086,8 @@ function GlobalStyles() {
         .dashboard-split { grid-template-columns: 1fr !important; }
         .order-modal-header { padding: 14px 16px !important; }
         .order-modal-body { padding: 16px !important; }
+        .orders-bulk-bar { flex-wrap: wrap; }
+        .orders-bulk-select { min-width: 0 !important; flex: 1; }
       }
     `}</style>
   );
@@ -1110,6 +1112,7 @@ const NAV_ITEMS = [
 // Bottom nav shows these 4; everything else in NAV_ITEMS lives in the
 // "More" sheet. Keep this list in sync if NAV_ITEMS' most-used items change.
 const BOTTOM_NAV_IDS = ['dashboard', 'orders', 'new', 'books'];
+const BOTTOM_NAV_LABELS = { dashboard: 'Home', new: 'New', books: 'Books' };
 
 function Sidebar({ view, setView, pendingNavigate, onConfirmNavigate, onCancelNavigate }) {
   const items = NAV_ITEMS;
@@ -1154,7 +1157,7 @@ function BottomNav({ view, setView, onMore }) {
           style={{ color: view === id ? T.terracotta : T.muted }}
         >
           <Icon size={20} strokeWidth={view === id ? 2.25 : 1.75} />
-          <span>{id === 'new' ? 'New' : label}</span>
+          <span>{BOTTOM_NAV_LABELS[id] || label}</span>
         </button>
       ))}
       <button onClick={onMore} className="bottom-nav-btn" style={{ color: T.muted }}>
@@ -1465,10 +1468,10 @@ function Orders({ orders, invoices, accounts, ledger, company, onOpenOrder, onNe
 
       {/* Bulk action bar — shows only when items are selected */}
       {selected.size > 0 && (
-        <div className="fade-in" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: T.ink, color: T.cream, borderRadius: 10, marginBottom: 12 }}>
+        <div className="fade-in orders-bulk-bar" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: T.ink, color: T.cream, borderRadius: 10, marginBottom: 12 }}>
           <div style={{ fontSize: 13, fontWeight: 500 }}>{selected.size} order{selected.size !== 1 ? 's' : ''} selected</div>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} style={{ padding: '8px 10px', background: T.surface, color: T.ink, border: 'none', borderRadius: 6, fontSize: 13, minWidth: 180 }}>
+            <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} style={{ padding: '8px 10px', background: T.surface, color: T.ink, border: 'none', borderRadius: 6, fontSize: 13, minWidth: 180 }} className="orders-bulk-select">
               <option value="">Change status to…</option>
               {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
