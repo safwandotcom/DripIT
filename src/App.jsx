@@ -1037,6 +1037,7 @@ function GlobalStyles() {
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 4px; }
       .fade-in { animation: fadeIn 0.25s ease-out; }
+      .mobile-only { display: none; }
       @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       @media print {
