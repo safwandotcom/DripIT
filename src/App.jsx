@@ -1083,6 +1083,7 @@ function GlobalStyles() {
           margin-bottom: 2px; font-family: ${T.sans};
         }
         .page-header { flex-wrap: wrap; gap: 10px; }
+        .dashboard-split { grid-template-columns: 1fr !important; }
       }
     `}</style>
   );
@@ -1282,7 +1283,7 @@ function Dashboard({ stats, orders, loans, accounts, ledger, onOpenOrder }) {
         <MetricCard label="Receivable" value={fmtBDT(stats.totalReceivable)} sub="Owed to you" icon={ArrowUpRight} accent={T.indigo} grad="linear-gradient(135deg,#5E5CE6,#BF5AF2)" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div className="dashboard-split" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div className="pcg-card" style={{ position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', bottom: -40, right: -40, width: 150, height: 150, borderRadius: '50%', background: 'radial-gradient(circle,rgba(94,92,230,0.07) 0%,transparent 70%)', pointerEvents: 'none' }} />
           <h3 style={{ fontFamily: "'Times New Roman', Times, serif", fontSize: 16, margin: '0 0 18px', fontWeight: 800, color: T.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
