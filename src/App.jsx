@@ -1088,6 +1088,13 @@ function GlobalStyles() {
         .order-modal-body { padding: 16px !important; }
         .orders-bulk-bar { flex-wrap: wrap; }
         .orders-bulk-select { min-width: 0 !important; flex: 1; }
+        .new-order-layout { grid-template-columns: 1fr !important; }
+        .new-order-calc-sidebar { position: static !important; }
+        .field-grid-2 { grid-template-columns: 1fr !important; }
+        .npm-layout { flex-direction: column !important; gap: 20px !important; }
+        .npm-form-col { flex: 1 1 auto !important; width: 100% !important; }
+        .npm-preview-box { width: 300px !important; height: 300px !important; }
+        .npm-preview-inner { transform: scale(0.2778) !important; }
       }
     `}</style>
   );
@@ -1880,12 +1887,12 @@ function NewOrder({ onSubmit, onCancel, defaultRate }) {
 
   return (
     <form onSubmit={submit}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 18 }}>
+      <div className="new-order-layout" style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 18 }}>
         <div className="pcg-card">
           <h3 style={{ fontFamily: T.serif, fontSize: 18, margin: '0 0 20px', fontWeight: 500 }}>Customer & Products</h3>
 
           <Section title="Customer Info">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <Field label="Full Name *"><input className="pcg-input" value={form.customerName} onChange={e => setForm({ ...form, customerName: e.target.value })} placeholder="e.g. Ayesha Rahman" /></Field>
               <Field label="Phone Number"><input className="pcg-input" value={form.customerPhone} onChange={e => setForm({ ...form, customerPhone: e.target.value })} placeholder="+880 17..." /></Field>
             </div>
@@ -1912,7 +1919,7 @@ function NewOrder({ onSubmit, onCancel, defaultRate }) {
                       <input className="pcg-input" value={item.productDescription} onChange={e => updateItem(item.id, 'productDescription', e.target.value)} placeholder="e.g. Size M, Black" />
                     </Field>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px', gap: 10, marginTop: 10 }}>
+                    <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 80px', gap: 10, marginTop: 10 }}>
                       <Field label="Cost Price (RM)">
                         <input className="pcg-input" type="number" step="0.01" min="0" value={item.costRM} onChange={e => updateItem(item.id, 'costRM', e.target.value)} placeholder="0.00" />
                       </Field>
@@ -1934,7 +1941,7 @@ function NewOrder({ onSubmit, onCancel, defaultRate }) {
                       </div>
 
                       {item.priceMode === 'fixed' ? (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'end' }}>
+                        <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'end' }}>
                           <Field label="Selling Price each (BDT)">
                             <input className="pcg-input" type="number" step="0.01" min="0" value={item.sellingBDT} onChange={e => updateItem(item.id, 'sellingBDT', e.target.value)} placeholder="0" />
                           </Field>
@@ -1944,7 +1951,7 @@ function NewOrder({ onSubmit, onCancel, defaultRate }) {
                           </div>
                         </div>
                       ) : (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'end' }}>
+                        <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'end' }}>
                           <Field label="Multiplier (×)">
                             <input className="pcg-input" type="number" step="0.5" min="1" value={item.multiplier} onChange={e => updateItem(item.id, 'multiplier', e.target.value)} placeholder={String(COST_MULTIPLIER)} />
                           </Field>
@@ -1970,7 +1977,7 @@ function NewOrder({ onSubmit, onCancel, defaultRate }) {
           </Section>
 
           <Section title="Default Multiplier">
-            <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 14, alignItems: 'center' }}>
+            <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 14, alignItems: 'center' }}>
               <Field label="Cost × Multiplier">
                 <input className="pcg-input" type="number" step="0.5" min="1" value={form.multiplier} onChange={e => setForm({ ...form, multiplier: e.target.value })} style={{ fontFamily: T.serif, fontSize: 17 }} />
               </Field>
@@ -1981,7 +1988,7 @@ function NewOrder({ onSubmit, onCancel, defaultRate }) {
           </Section>
 
           <Section title="Cost of Goods (COGS)">
-            <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 14, alignItems: 'center' }}>
+            <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 14, alignItems: 'center' }}>
               <Field label="RM → BDT Rate (real)">
                 <input className="pcg-input" type="number" step="0.01" min="0" value={form.conversionRate} onChange={e => setForm({ ...form, conversionRate: e.target.value })} style={{ fontFamily: T.serif, fontSize: 17 }} />
               </Field>
@@ -2013,7 +2020,7 @@ function NewOrder({ onSubmit, onCancel, defaultRate }) {
               ))}
             </div>
             {form.discountType !== 'none' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 14, alignItems: 'end' }}>
+              <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 14, alignItems: 'end' }}>
                 <Field label={form.discountType === 'percent' ? 'Discount %' : 'Discount Amount (BDT)'}>
                   <input className="pcg-input" type="number" step="0.01" min="0" value={form.discountValue} onChange={e => setForm({ ...form, discountValue: e.target.value })} placeholder="0" style={{ fontFamily: T.serif, fontSize: 16 }} />
                 </Field>
@@ -2108,7 +2115,7 @@ function NewOrder({ onSubmit, onCancel, defaultRate }) {
         </div>
 
         <div>
-          <div style={{ position: 'sticky', top: 20, background: 'linear-gradient(160deg, #1a0800 0%, #0D0D0D 50%, #080012 100%)', borderRadius: 20, padding: 22, color: '#fff', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
+          <div className="new-order-calc-sidebar" style={{ position: 'sticky', top: 20, background: 'linear-gradient(160deg, #1a0800 0%, #0D0D0D 50%, #080012 100%)', borderRadius: 20, padding: 22, color: '#fff', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
             {/* Blobs */}
             <div style={{ position: 'absolute', top: -40, right: -40, width: 160, height: 160, borderRadius: '50%', background: 'radial-gradient(circle,rgba(255,85,51,0.2) 0%,transparent 70%)', pointerEvents: 'none' }} />
             <div style={{ position: 'absolute', bottom: -30, left: -30, width: 120, height: 120, borderRadius: '50%', background: 'radial-gradient(circle,rgba(94,92,230,0.15) 0%,transparent 70%)', pointerEvents: 'none' }} />
@@ -5339,8 +5346,8 @@ function NewPostMaker({ company, showToast }) {
   const scale = 460 / NPM_CANVAS;
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', gap: 32, alignItems: 'flex-start' }}>
-      <div className="pcg-card" style={{ flex: '0 0 320px', padding: 22 }}>
+    <div className="npm-layout" style={{ maxWidth: 900, margin: '0 auto', display: 'flex', gap: 32, alignItems: 'flex-start' }}>
+      <div className="pcg-card npm-form-col" style={{ flex: '0 0 320px', padding: 22 }}>
         <Field label="Product Photo">
           {form.photoDataUrl ? (
             <div
@@ -5409,11 +5416,12 @@ function NewPostMaker({ company, showToast }) {
 
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 11.5, color: T.muted, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 500 }}>Preview</div>
-        <div style={{
+        <div className="npm-preview-box" style={{
           width: NPM_CANVAS * scale, height: NPM_CANVAS * scale, overflow: 'hidden',
           border: `1px solid ${T.border}`, borderRadius: 4, boxShadow: '0 10px 40px rgba(0,0,0,0.08)'
         }}>
           <div
+            className="npm-preview-inner"
             style={{ width: NPM_CANVAS, height: NPM_CANVAS, transform: `scale(${scale})`, transformOrigin: 'top left' }}
             dangerouslySetInnerHTML={{ __html: buildTelegramCardHTML({ ...form, photoDataUrl: activePhotoUrl }, company) }}
           />
