@@ -1479,7 +1479,7 @@ function Orders({ orders, invoices, accounts, ledger, company, onOpenOrder, onNe
       <div className="pcg-card" style={{ padding: 0, overflow: 'visible' }}>
         {filtered.length === 0 ? <div style={{ padding: 36 }}><EmptyState text={orders.length === 0 ? "No orders yet. Click 'New Order' to start." : "No orders match your filters."} /></div> : (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: '40px 100px 1fr 1fr 110px 160px 50px 50px 40px', padding: '12px 16px', borderBottom: `1px solid ${T.borderSoft}`, fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, alignItems: 'center', gap: 8 }}>
+            <div className="desktop-only" style={{ display: 'grid', gridTemplateColumns: '40px 100px 1fr 1fr 110px 160px 50px 50px 40px', padding: '12px 16px', borderBottom: `1px solid ${T.borderSoft}`, fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, alignItems: 'center', gap: 8 }}>
               <div>
                 <input type="checkbox" checked={filtered.length > 0 && selected.size === filtered.length} onChange={toggleSelectAll} style={{ cursor: 'pointer', accentColor: T.terracotta }} />
               </div>
@@ -1493,20 +1493,34 @@ function Orders({ orders, invoices, accounts, ledger, company, onOpenOrder, onNe
               <div></div>
             </div>
             {filtered.map(o => (
-              <OrderRow
-                key={o.id}
-                order={o}
-                invoices={invoices}
-                ledger={ledger}
-                company={company}
-                isSelected={selected.has(o.id)}
-                onToggleSelect={() => toggleSelect(o.id)}
-                onStatusChange={(newStatus) => applyStatusToOrder(o, newStatus)}
-                onShowInvoice={onShowInvoice}
-                onShowReceipt={onShowReceipt}
-                onOpen={() => onOpenOrder(o)}
-                copyText={copyText}
-              />
+              <React.Fragment key={o.id}>
+                <OrderRow
+                  order={o}
+                  invoices={invoices}
+                  ledger={ledger}
+                  company={company}
+                  isSelected={selected.has(o.id)}
+                  onToggleSelect={() => toggleSelect(o.id)}
+                  onStatusChange={(newStatus) => applyStatusToOrder(o, newStatus)}
+                  onShowInvoice={onShowInvoice}
+                  onShowReceipt={onShowReceipt}
+                  onOpen={() => onOpenOrder(o)}
+                  copyText={copyText}
+                />
+                <OrderCardMobile
+                  order={o}
+                  invoices={invoices}
+                  ledger={ledger}
+                  company={company}
+                  isSelected={selected.has(o.id)}
+                  onToggleSelect={() => toggleSelect(o.id)}
+                  onStatusChange={(newStatus) => applyStatusToOrder(o, newStatus)}
+                  onShowInvoice={onShowInvoice}
+                  onShowReceipt={onShowReceipt}
+                  onOpen={() => onOpenOrder(o)}
+                  copyText={copyText}
+                />
+              </React.Fragment>
             ))}
           </>
         )}
@@ -1540,7 +1554,7 @@ function OrderRow({ order, invoices, ledger, company, isSelected, onToggleSelect
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '40px 100px 1fr 1fr 110px 160px 50px 50px 40px', padding: '14px 16px', borderBottom: `1px solid ${T.borderSoft}`, alignItems: 'center', fontSize: 13.5, gap: 8, position: 'relative', background: isSelected ? T.terracotta + '08' : 'transparent' }}>
+    <div className="desktop-only" style={{ display: 'grid', gridTemplateColumns: '40px 100px 1fr 1fr 110px 160px 50px 50px 40px', padding: '14px 16px', borderBottom: `1px solid ${T.borderSoft}`, alignItems: 'center', fontSize: 13.5, gap: 8, position: 'relative', background: isSelected ? T.terracotta + '08' : 'transparent' }}>
       <div>
         <input type="checkbox" checked={isSelected} onChange={onToggleSelect} style={{ cursor: 'pointer', accentColor: T.terracotta }} />
       </div>
@@ -1640,6 +1654,136 @@ function OrderRow({ order, invoices, ledger, company, isSelected, onToggleSelect
       </div>
 
       <div onClick={onOpen} style={{ cursor: 'pointer', textAlign: 'right' }}><ChevronRight size={15} color={T.muted} /></div>
+    </div>
+  );
+}
+
+// A stacked-card rendering of the same order data OrderRow shows as a
+// table row — OrderRow's 9-column grid can't be reflowed into a card via
+// CSS alone, so this is a real second component rather than a media
+// query. The message/doc dropdown logic below intentionally mirrors
+// OrderRow's rather than sharing a hook with it: mobile may want a
+// different interaction there in a later phase (e.g. a full sheet
+// instead of a small anchored dropdown), so keeping them separate now
+// avoids coupling that would make that change harder later.
+function OrderCardMobile({ order, invoices, ledger, company, isSelected, onToggleSelect, onStatusChange, onShowInvoice, onShowReceipt, onOpen, copyText }) {
+  const c = calcOrder(order);
+  const s = STATUS[order.status];
+  const linkedInvoice = (invoices || []).find(inv => inv.relatedOrderId === order.id);
+  const linkedPayments = (ledger || []).filter(l => l.relatedOrderId === order.id && l.direction === 'in' && l.kind !== 'cogs');
+
+  const [msgOpen, setMsgOpen] = useState(false);
+  const [docOpen, setDocOpen] = useState(false);
+
+  const messageOptions = [
+    { id: 'advance', label: 'Advance Payment Request', available: !order.skipAdvance },
+    { id: 'confirmed', label: 'Order Confirmation', available: order.orderPlacedMY || order.skipAdvance },
+    { id: 'reachedBD', label: 'Reached Bangladesh', available: order.reachedBD },
+    { id: 'outForDelivery', label: 'Out for Delivery', available: order.onTheWay },
+    { id: 'delivered', label: 'Delivery Confirmation', available: order.delivered }
+  ];
+
+  const handleCopyMessage = (type) => {
+    const text = messages[type] ? messages[type](order, company) : '';
+    copyText(text, 'Message copied — paste in Messenger');
+    setMsgOpen(false);
+  };
+
+  return (
+    <div className="mobile-only" style={{ padding: '14px 16px', borderBottom: `1px solid ${T.borderSoft}`, background: isSelected ? T.terracotta + '08' : 'transparent' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <input type="checkbox" checked={isSelected} onChange={onToggleSelect} style={{ cursor: 'pointer', accentColor: T.terracotta, marginTop: 3 }} />
+        <div onClick={onOpen} style={{ flex: 1, cursor: 'pointer', minWidth: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+            <div style={{ color: T.ink, fontWeight: 500, fontSize: 14 }}>{order.customerName}</div>
+            <div style={{ fontFamily: T.serif, fontWeight: 500, fontVariantNumeric: 'tabular-nums', fontSize: 15, flexShrink: 0 }}>{fmtBDT(c.selling)}</div>
+          </div>
+          <div style={{ fontSize: 11.5, color: T.muted, marginTop: 2 }}>{order.orderNumber} · {order.customerPhone}</div>
+          <div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.productName}</div>
+          <div style={{ fontSize: 11.5, color: T.muted, marginTop: 2 }}>{fmtDate(order.orderDate)}</div>
+        </div>
+        <ChevronRight size={15} color={T.muted} style={{ marginTop: 4, flexShrink: 0 }} onClick={onOpen} />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, marginLeft: 26 }} onClick={e => e.stopPropagation()}>
+        <select
+          value={order.status}
+          onChange={e => onStatusChange(e.target.value)}
+          style={{
+            flex: 1, padding: '6px 8px', fontSize: 11.5, fontWeight: 700,
+            background: s.bg, color: s.color, border: `1.5px solid ${s.color}40`,
+            borderRadius: 6, cursor: 'pointer', appearance: 'menulist', letterSpacing: '0.02em'
+          }}
+        >
+          {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k} style={{ background: T.surface, color: T.ink }}>{v.label}</option>)}
+        </select>
+
+        <div style={{ position: 'relative' }}>
+          <button onClick={() => { setMsgOpen(!msgOpen); setDocOpen(false); }} className="pcg-btn pcg-btn-ghost" title="Copy message" style={{ padding: 6 }}>
+            <MessageSquare size={16} />
+          </button>
+          {msgOpen && (
+            <>
+              <div onClick={() => setMsgOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 49 }} />
+              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.1)', minWidth: 220, maxWidth: 'calc(100vw - 60px)', zIndex: 50, overflow: 'hidden' }}>
+                {messageOptions.map(m => (
+                  <button
+                    key={m.id}
+                    disabled={!m.available}
+                    onClick={() => m.available && handleCopyMessage(m.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '9px 12px',
+                      background: 'transparent', border: 'none', cursor: m.available ? 'pointer' : 'not-allowed',
+                      textAlign: 'left', fontSize: 12.5, color: m.available ? T.ink : T.muted,
+                      borderBottom: `1px solid ${T.borderSoft}`
+                    }}
+                    title={m.available ? '' : 'Available once order reaches that stage'}
+                  >
+                    <Copy size={11} /> {m.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div style={{ position: 'relative' }}>
+          <button onClick={() => { setDocOpen(!docOpen); setMsgOpen(false); }} className="pcg-btn pcg-btn-ghost" title="Print invoice or receipt" style={{ padding: 6 }}>
+            <FileText size={16} />
+          </button>
+          {docOpen && (
+            <>
+              <div onClick={() => setDocOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 49 }} />
+              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.1)', minWidth: 220, maxWidth: 'calc(100vw - 60px)', zIndex: 50, overflow: 'hidden' }}>
+                <button
+                  onClick={() => { if (linkedInvoice) { onShowInvoice(linkedInvoice); setDocOpen(false); } }}
+                  disabled={!linkedInvoice}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '9px 12px',
+                    background: 'transparent', border: 'none', cursor: linkedInvoice ? 'pointer' : 'not-allowed',
+                    textAlign: 'left', fontSize: 12.5, color: linkedInvoice ? T.ink : T.muted,
+                    borderBottom: `1px solid ${T.borderSoft}`
+                  }}
+                >
+                  <FileText size={12} /> Sales Invoice
+                </button>
+                <button
+                  onClick={() => { if (order.delivered) { onShowReceipt({ order, payments: linkedPayments, company }); setDocOpen(false); } }}
+                  disabled={!order.delivered}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '9px 12px',
+                    background: 'transparent', border: 'none', cursor: order.delivered ? 'pointer' : 'not-allowed',
+                    textAlign: 'left', fontSize: 12.5, color: order.delivered ? T.ink : T.muted
+                  }}
+                  title={order.delivered ? '' : 'Available once delivered'}
+                >
+                  <Check size={12} /> Paid Receipt
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
