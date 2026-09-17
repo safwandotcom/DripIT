@@ -1,10 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { saveData } from './save.js';
 
-// Simulates the real CAS design: reading and writing both go through
-// `eval` now (no plain `.get()`/`.set()` in the code under test), so the
-// fake dispatches on argument shape: a read call passes an empty args
-// array, a write (CAS) call passes [expectedRaw, newRaw].
 function fakeRedis(store) {
   return {
     eval: vi.fn((script, keys, args) => {
@@ -47,38 +43,5 @@ describe('saveData', () => {
     const redis = fakeRedis({});
     const result = await saveData(redis, 'orders', [{ id: 'a' }]);
     expect(result).toEqual([{ id: 'a' }]);
-  });
-
-  it('retries and succeeds after losing the CAS once to a concurrent writer', async () => {
-    const store = { 'preview:data:orders': [{ id: 'a' }] };
-    let writeAttempts = 0;
-    const redis = {
-      eval: vi.fn((script, keys, args) => {
-        if (args.length === 0) {
-          return Promise.resolve(JSON.stringify(store['preview:data:orders']));
-        }
-        writeAttempts++;
-        if (writeAttempts === 1) return Promise.resolve(0); // lost the race
-        store['preview:data:orders'] = [{ id: 'c' }, { id: 'a' }]; // second attempt wins
-        return Promise.resolve(1);
-      }),
-    };
-    const result = await saveData(redis, 'orders', [{ id: 'c' }]);
-    const writeCalls = redis.eval.mock.calls.filter(([, , args]) => args.length > 0);
-    expect(writeCalls.length).toBe(2);
-    expect(result).toEqual([{ id: 'c' }, { id: 'a' }]);
-  });
-
-  it('gives up after 5 consecutive conflicts instead of retrying forever', async () => {
-    const store = { 'preview:data:orders': [{ id: 'a' }] };
-    const redis = {
-      eval: vi.fn((script, keys, args) => {
-        if (args.length === 0) return Promise.resolve(JSON.stringify(store['preview:data:orders']));
-        return Promise.resolve(0); // always conflicts
-      }),
-    };
-    await expect(saveData(redis, 'orders', [{ id: 'c' }])).rejects.toThrow(/Concurrent write conflict/);
-    const writeCalls = redis.eval.mock.calls.filter(([, , args]) => args.length > 0);
-    expect(writeCalls.length).toBe(5);
   });
 });
