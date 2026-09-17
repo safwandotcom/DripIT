@@ -379,6 +379,11 @@ export default function App() {
   const [accounts, setAccounts] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [counters, setCounters] = useState({});
+  // Mirrors `counters` but updates synchronously — `addOrder`/`addInvoice` read+write
+  // this ref directly so two calls in the same tick (rapid clicks) can never reserve
+  // the same order/invoice number, which React state (async/batched) can't guarantee.
+  const countersRef = useRef({});
+  useEffect(() => { countersRef.current = counters; }, [counters]);
 
   // UI state
   const [toast, setToast] = useState(null);
@@ -409,8 +414,13 @@ export default function App() {
         storage.load('po_settings', { realExchangeRate: 32 })
       ]);
       setOrders(o.map(x => ({ company: 'drip_ittt', ...x })));
-      setExpenses(e.map(x => ({ company: 'drip_ittt', ...x })));
-      setLedger(l);
+      // One-time migration: RM entries recorded before rate-locking existed have no
+      // lockedRate. Freeze them at today's rate now so they stop drifting when the
+      // rate setting changes later — the true historical rate was never recorded,
+      // so "now" is the best available anchor; only entries missing it are touched.
+      const migrateRate = parseFloat(st.realExchangeRate) || 32;
+      setExpenses(e.map(x => ({ company: 'drip_ittt', ...x, ...((x.currency === 'RM' && !x.lockedRate) ? { lockedRate: migrateRate } : {}) })));
+      setLedger(l.map(x => (((x.kind === 'cogs' || x.kind === 'expense') && x.currency === 'RM' && !x.lockedRate) ? { ...x, lockedRate: migrateRate } : x)));
       setLoans(ln);
       setAccounts(ac);
       setInvoices(inv);
@@ -487,18 +497,19 @@ export default function App() {
 
   // === ORDER OPS ===
   const addOrder = (data) => {
-    const orderN = computeNextNumber('order', cOrders, cInvoices, counters);
-    const invoiceN = computeNextNumber('invoice', cOrders, cInvoices, counters);
+    // Read + reserve from the ref (synchronous) so a second call in the same tick
+    // never computes the same number — see countersRef comment above.
+    const orderN = computeNextNumber('order', cOrders, cInvoices, countersRef.current);
+    const invoiceN = computeNextNumber('invoice', cOrders, cInvoices, countersRef.current);
     const orderPrefix = currentCompany === 'NOVUS' ? 'NV' : 'DI';
     const invPrefix = currentCompany === 'NOVUS' ? 'NV-INV' : 'DI-INV';
     const orderNumber = `${orderPrefix}-${String(orderN).padStart(4, '0')}`;
     const invoiceNumber = `${invPrefix}-${String(invoiceN).padStart(4, '0')}`;
 
-    // Bump both counters in a single state update
-    setCounters(prev => {
-      const cur = prev[currentCompany] || { order: 1, invoice: 1 };
-      return { ...prev, [currentCompany]: { ...cur, order: orderN + 1, invoice: invoiceN + 1 } };
-    });
+    // Reserve both numbers immediately (ref, not state) and bump both counters
+    const curCounters = countersRef.current[currentCompany] || { order: 1, invoice: 1 };
+    countersRef.current = { ...countersRef.current, [currentCompany]: { ...curCounters, order: orderN + 1, invoice: invoiceN + 1 } };
+    setCounters(countersRef.current);
 
     const newOrder = {
       id: uid(), company: currentCompany, orderNumber, ...data,
@@ -568,6 +579,9 @@ export default function App() {
         account: rmAccountName,
         party: data.customerName,
         amount: costRM, currency: 'RM',
+        // Locked at today's real exchange rate so editing that setting later never
+        // rewrites this period's already-reported profit — see cogsTosBDT below.
+        lockedRate: parseFloat(settings.realExchangeRate) || 32,
         description: `${orderNumber} — ${data.productName} (RM ${costRM} × ${data.conversionRate} = ${fmtBDT(parseFloat(data.cogsBDT) || 0)} equivalent)`,
         relatedOrderId: newOrder.id, kind: 'cogs'
       }, ...prev]);
@@ -587,28 +601,50 @@ export default function App() {
     }
   };
 
+  // A cancelled order keeps its status regardless of checkpoint flags — only an
+  // explicit reactivate (cancelled: false) re-derives status from those flags below.
+  const deriveOrderStatus = (o) => {
+    if (o.cancelled) return 'cancelled';
+    if (o.delivered) return 'delivered';
+    if (o.onTheWay) return 'on_the_way';
+    if (o.reachedBD) return 'reached_bd';
+    if (o.advancePaid && o.orderPlacedMY) return 'order_confirmed';
+    if (o.advancePaid) return 'advance_paid';
+    return 'pending';
+  };
+
   const updateOrder = (id, updates) => {
     setOrders(orders.map(o => {
       if (o.id !== id) return o;
       const newO = { ...o, ...updates };
-      if (newO.delivered) newO.status = 'delivered';
-      else if (newO.onTheWay) newO.status = 'on_the_way';
-      else if (newO.reachedBD) newO.status = 'reached_bd';
-      else if (newO.advancePaid && newO.orderPlacedMY) newO.status = 'order_confirmed';
-      else if (newO.advancePaid) newO.status = 'advance_paid';
-      else newO.status = 'pending';
+      newO.status = deriveOrderStatus(newO);
       return newO;
     }));
-    if (selectedOrder?.id === id) setSelectedOrder(prev => ({ ...prev, ...updates }));
+    // Recompute status here too — the open modal shows this copy directly, and it
+    // must match what setOrders above just derived, not the raw unrecomputed updates.
+    if (selectedOrder?.id === id) setSelectedOrder(prev => {
+      const merged = { ...prev, ...updates };
+      merged.status = deriveOrderStatus(merged);
+      return merged;
+    });
+  };
+
+  const cancelOrder = (id) => {
+    if (!confirm("Cancel this order? It stays in your records — payments already recorded stay in Books & Ledger and its invoice is kept — but it stops counting as active or as revenue. You can reactivate it later if needed.")) return;
+    updateOrder(id, { cancelled: true });
+    showToast('Order cancelled — history kept in Books & Ledger');
+  };
+
+  const reactivateOrder = (id) => {
+    updateOrder(id, { cancelled: false });
+    showToast('Order reactivated');
   };
 
   const deleteOrder = (id) => {
-    if (!confirm('Delete this order permanently? Any linked payment entries and auto-generated invoice will also be removed.')) return;
+    if (!confirm('Delete this order record? Its payment history stays in Books & Ledger and its invoice is kept, so your account balances and invoice sequence stay accurate — only the order entry itself is removed. Use Cancel instead if you just want to mark it inactive.')) return;
     setOrders(prev => prev.filter(o => o.id !== id));
-    setLedger(prev => prev.filter(l => l.relatedOrderId !== id));
-    setInvoices(prev => prev.filter(i => i.relatedOrderId !== id));
     setSelectedOrder(null);
-    showToast('Order, invoice, and linked entries deleted');
+    showToast('Order deleted — its ledger entries and invoice were kept');
   };
 
   // === ORDER PAYMENT FLOW (auto-creates ledger entries) ===
@@ -665,7 +701,10 @@ export default function App() {
 
   // === EXPENSE OPS (auto-syncs to ledger) ===
   const addExpense = (data) => {
-    const expense = { id: uid(), company: currentCompany, ...data };
+    // Locked at today's real exchange rate for RM expenses — same reasoning as
+    // COGS above: keeps past periods' reported profit stable when the rate changes.
+    const lockedRate = data.currency === 'RM' ? (parseFloat(settings.realExchangeRate) || 32) : undefined;
+    const expense = { id: uid(), company: currentCompany, ...data, ...(lockedRate ? { lockedRate } : {}) };
     setExpenses(prev => [expense, ...prev]);
     // Auto-create matching ledger entry
     if (data.account) {
@@ -674,6 +713,7 @@ export default function App() {
         direction: 'out', type: `Expense · ${data.category}`,
         account: data.account, party: '',
         amount: data.amount, currency: data.currency,
+        ...(lockedRate ? { lockedRate } : {}),
         description: data.description,
         relatedExpenseId: expense.id, kind: 'expense'
       }, ...prev]);
@@ -699,10 +739,9 @@ export default function App() {
   };
 
   const deleteExpense = (id) => {
-    if (!confirm('Delete this expense and its ledger entry?')) return;
+    if (!confirm('Delete this expense record? Its matching entry stays in Books & Ledger so account balances stay accurate — only the expense record itself is removed.')) return;
     setExpenses(prev => prev.filter(e => e.id !== id));
-    setLedger(prev => prev.filter(l => l.relatedExpenseId !== id));
-    showToast('Expense deleted');
+    showToast('Expense deleted — its ledger entry was kept');
   };
 
   // === LEDGER OPS ===
@@ -741,10 +780,9 @@ export default function App() {
     showToast('Loan updated');
   };
   const deleteLoan = (id) => {
-    if (!confirm('Delete this loan and its ledger entries?')) return;
+    if (!confirm('Delete this loan record? Its matching entries stay in Books & Ledger so account balances stay accurate — only the loan record itself is removed.')) return;
     setLoans(loans.filter(l => l.id !== id));
-    setLedger(ledger.filter(l => l.relatedLoanId !== id));
-    showToast('Loan deleted');
+    showToast('Loan deleted — its ledger entries were kept');
   };
   const recordRepayment = (loan, amount, date) => {
     const newRepaid = (loan.amountRepaid || 0) + parseFloat(amount);
@@ -845,8 +883,23 @@ export default function App() {
     showToast('Account added');
   };
   const updateAccount = (id, updates) => {
+    const old = accounts.find(a => a.id === id);
     setAccounts(accounts.map(a => a.id === id ? { ...a, ...updates } : a));
-    showToast('Account updated');
+    // Ledger/expense/loan entries reference accounts by NAME (not id) — a rename must
+    // cascade into every historical entry, or their balances silently stop matching.
+    if (old && updates.name && updates.name !== old.name) {
+      const oldName = old.name, newName = updates.name;
+      setLedger(prev => prev.map(l => {
+        if (l.account === oldName) l = { ...l, account: newName };
+        if (l.kind === 'transfer' && l.party === oldName) l = { ...l, party: newName };
+        return l;
+      }));
+      setExpenses(prev => prev.map(e => e.account === oldName ? { ...e, account: newName } : e));
+      setLoans(prev => prev.map(l => l.account === oldName ? { ...l, account: newName } : l));
+      showToast(`Renamed "${oldName}" → "${newName}" — all historical entries updated`);
+    } else {
+      showToast('Account updated');
+    }
   };
   const deleteAccount = (id) => {
     if (!confirm('Delete this account? Existing transactions will remain.')) return;
@@ -856,13 +909,12 @@ export default function App() {
 
   // === INVOICE OPS ===
   const addInvoice = (data) => {
-    const n = computeNextNumber('invoice', cOrders, cInvoices, counters);
+    const n = computeNextNumber('invoice', cOrders, cInvoices, countersRef.current);
     const prefix = currentCompany === 'NOVUS' ? 'NV-INV' : 'DI-INV';
     const invoiceNumber = `${prefix}-${String(n).padStart(4, '0')}`;
-    setCounters(prev => {
-      const cur = prev[currentCompany] || { order: 1, invoice: 1 };
-      return { ...prev, [currentCompany]: { ...cur, invoice: n + 1 } };
-    });
+    const curCounters = countersRef.current[currentCompany] || { order: 1, invoice: 1 };
+    countersRef.current = { ...countersRef.current, [currentCompany]: { ...curCounters, invoice: n + 1 } };
+    setCounters(countersRef.current);
     const inv = { id: uid(), company: currentCompany, invoiceNumber, ...data };
     setInvoices([inv, ...invoices]);
     showToast(`Invoice ${invoiceNumber} created`);
@@ -890,9 +942,12 @@ export default function App() {
 
     // COGS — from ledger entries (kind === 'cogs'), now stored in RM
     // Convert RM → BDT using the real conversion rate for profit calculations
+    // Use the rate locked on the entry itself (the real rate at the time it was
+    // recorded) when present, so editing today's rate never reshapes past profit.
+    // Only entries recorded before this locking existed fall back to today's rate.
     const cogsTosBDT = (l) => {
       const amt = parseFloat(l.amount || 0);
-      if ((l.currency || 'RM') === 'RM') return amt * realRate;
+      if ((l.currency || 'RM') === 'RM') return amt * (parseFloat(l.lockedRate) || realRate);
       return amt; // legacy BDT entries
     };
     const totalCOGS = cLedger.filter(l => l.kind === 'cogs').reduce((s, l) => s + cogsTosBDT(l), 0);
@@ -903,7 +958,8 @@ export default function App() {
     // Operating expenses (exclude COGS entries; those are tracked separately)
     const expensesRM = cExpenses.filter(e => e.currency === 'RM').reduce((s, e) => s + parseFloat(e.amount || 0), 0);
     const expensesBDT = cExpenses.filter(e => e.currency === 'BDT').reduce((s, e) => s + parseFloat(e.amount || 0), 0);
-    const totalExpensesBDT = expensesBDT + (expensesRM * realRate); // use REAL rate, not selling multiplier
+    const expensesRMinBDT = cExpenses.filter(e => e.currency === 'RM').reduce((s, e) => s + parseFloat(e.amount || 0) * (parseFloat(e.lockedRate) || realRate), 0);
+    const totalExpensesBDT = expensesBDT + expensesRMinBDT; // each RM expense converted at ITS locked rate, not today's
 
     const totalPayable = cLoans.filter(l => l.type === 'taken' && l.status === 'open').reduce((s, l) => s + (l.principal - (l.amountRepaid || 0)), 0);
     const totalReceivable = cLoans.filter(l => l.type === 'given' && l.status === 'open').reduce((s, l) => s + (l.principal - (l.amountRepaid || 0)), 0);
@@ -971,7 +1027,7 @@ export default function App() {
         </main>
       </div>
 
-      {selectedOrder && <OrderModal order={selectedOrder} company={company} accounts={cAccounts} onClose={() => setSelectedOrder(null)} onUpdate={updateOrder} onDelete={deleteOrder} onShowMessage={(type) => setMessageModal({ order: selectedOrder, type })} onRequirePayment={requireOrderPayment} onRemovePayment={removeOrderPayment} ledger={cLedger} invoices={cInvoices} onShowInvoice={setPrintInvoice} onShowReceipt={setPrintReceipt} />}
+      {selectedOrder && <OrderModal order={selectedOrder} company={company} accounts={cAccounts} onClose={() => setSelectedOrder(null)} onUpdate={updateOrder} onDelete={deleteOrder} onCancel={cancelOrder} onReactivate={reactivateOrder} onShowMessage={(type) => setMessageModal({ order: selectedOrder, type })} onRequirePayment={requireOrderPayment} onRemovePayment={removeOrderPayment} ledger={cLedger} invoices={cInvoices} onShowInvoice={setPrintInvoice} onShowReceipt={setPrintReceipt} />}
       {messageModal && <MessageModal order={messageModal.order} type={messageModal.type} company={company} onClose={() => setMessageModal(null)} copyText={copyText} />}
       {editingExpense && <ExpenseEditModal expense={editingExpense} accounts={cAccounts} onClose={() => setEditingExpense(null)} onSave={(updates) => { updateExpense(editingExpense.id, updates); setEditingExpense(null); }} />}
       {editingLedger && <LedgerEditModal entry={editingLedger} accounts={cAccounts} onClose={() => setEditingLedger(null)} onSave={(updates) => { updateLedger(editingLedger.id, updates); setEditingLedger(null); }} />}
@@ -1313,7 +1369,7 @@ function Dashboard({ stats, orders, loans, accounts, ledger, onOpenOrder }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 20 }}>
         <MetricCard label="Total Revenue" value={fmtBDT(stats.totalRevenue)} sub={`${orders.filter(o => o.status === 'delivered').length} delivered`} icon={TrendingUp} accent={T.emerald} grad="linear-gradient(135deg,#30D158,#00C7BE)" big />
         <MetricCard label="COGS" value={fmtBDT(stats.deliveredCOGS)} sub="Cost of delivered goods" icon={Package} accent={T.amber} grad="linear-gradient(135deg,#FF9F0A,#FF6B6B)" />
-        <MetricCard label="Net Profit" value={fmtBDT(profit)} sub={profit >= 0 ? 'Revenue − COGS − expenses' : 'Review costs'} icon={Wallet} accent={profit >= 0 ? T.emerald : T.paidRed} grad={profit >= 0 ? "linear-gradient(135deg,#30D158,#5AC8FA)" : "linear-gradient(135deg,#FF2D55,#FF9F0A)"} big />
+        <MetricCard label="Net Profit (All-Time)" value={fmtBDT(profit)} sub={profit >= 0 ? 'Since day one · see Books & Ledger → Profit for This Month' : 'Review costs'} icon={Wallet} accent={profit >= 0 ? T.emerald : T.paidRed} grad={profit >= 0 ? "linear-gradient(135deg,#30D158,#5AC8FA)" : "linear-gradient(135deg,#FF2D55,#FF9F0A)"} big />
         <MetricCard label="Bank Balance" value={fmtBDT(balances.bdt)} sub={balances.rm > 0 ? `+ ${fmtRM(balances.rm)} · ${accounts.length} accounts` : `${accounts.length} accounts`} icon={Landmark} accent={T.blue} grad="linear-gradient(135deg,#0A84FF,#32ADE6)" />
         <MetricCard label="Payable" value={fmtBDT(stats.totalPayable)} sub="You owe" icon={ArrowDownRight} accent={T.rose} grad="linear-gradient(135deg,#FF2D55,#FF9F0A)" />
         <MetricCard label="Receivable" value={fmtBDT(stats.totalReceivable)} sub="Owed to you" icon={ArrowUpRight} accent={T.indigo} grad="linear-gradient(135deg,#5E5CE6,#BF5AF2)" />
@@ -2262,7 +2318,7 @@ function PreviewRow({ label, value, bold, muted, badge, badgeColor }) {
 // ═══════════════════════════════════════════════════════════════════
 // ORDER MODAL (with edit mode)
 // ═══════════════════════════════════════════════════════════════════
-function OrderModal({ order, company, accounts, onClose, onUpdate, onDelete, onShowMessage, onRequirePayment, onRemovePayment, ledger, invoices, onShowInvoice, onShowReceipt }) {
+function OrderModal({ order, company, accounts, onClose, onUpdate, onDelete, onCancel, onReactivate, onShowMessage, onRequirePayment, onRemovePayment, ledger, invoices, onShowInvoice, onShowReceipt }) {
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState(order);
   useEffect(() => { setForm(order); }, [order]);
@@ -2507,6 +2563,15 @@ function OrderModal({ order, company, accounts, onClose, onUpdate, onDelete, onS
             </div>
           )}
 
+          {order.status === 'cancelled' ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#F5F5F5', border: '1px solid #E5E5E5', borderRadius: 10, marginBottom: 10 }}>
+              <X size={14} color="#525252" />
+              <div style={{ flex: 1, fontSize: 12.5, color: '#525252' }}>This order is cancelled — its history is kept, but it doesn't count as active or as revenue.</div>
+              <button onClick={() => onReactivate(order.id)} className="pcg-btn pcg-btn-secondary pcg-btn-sm">Reactivate</button>
+            </div>
+          ) : (
+            <button onClick={() => onCancel(order.id)} className="pcg-btn pcg-btn-secondary" style={{ marginBottom: 10, width: '100%', justifyContent: 'center' }}><X size={13} /> Cancel order</button>
+          )}
           <button onClick={() => onDelete(order.id)} className="pcg-btn pcg-btn-ghost" style={{ color: T.terracotta }}><Trash2 size={13} /> Delete order</button>
         </div>
       </div>
@@ -2874,15 +2939,17 @@ function ProfitView({ orders, expenses, ledger, settings, setSettings, onOwnerDr
     .filter(l => l.kind === 'cogs' && deliveredIdSet.has(l.relatedOrderId))
     .reduce((s, l) => {
       const amt = parseFloat(l.amount || 0);
-      // New entries are RM; legacy entries are BDT — handle both
-      return s + ((l.currency === 'RM' || !l.currency) ? amt * rate : amt);
+      // Convert at the rate locked on the entry (the real rate when it happened) so
+      // editing today's rate never reshapes an already-reported period's profit.
+      // Only pre-migration entries without a locked rate fall back to today's rate.
+      return s + ((l.currency === 'RM' || !l.currency) ? amt * (parseFloat(l.lockedRate) || rate) : amt);
     }, 0);
 
   // COSTS — operating expenses (BDT directly + RM converted). COGS handled separately above.
   const periodExpenses = expenses.filter(e => filterByPeriod(e.date));
   const expensesBDT = periodExpenses.filter(e => e.currency === 'BDT').reduce((s, e) => s + parseFloat(e.amount || 0), 0);
   const expensesRM = periodExpenses.filter(e => e.currency === 'RM').reduce((s, e) => s + parseFloat(e.amount || 0), 0);
-  const expensesRMinBDT = expensesRM * rate;
+  const expensesRMinBDT = periodExpenses.filter(e => e.currency === 'RM').reduce((s, e) => s + parseFloat(e.amount || 0) * (parseFloat(e.lockedRate) || rate), 0);
   const operatingCosts = expensesBDT + expensesRMinBDT;
   const totalCosts = cogs + operatingCosts;
 
