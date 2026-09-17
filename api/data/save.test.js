@@ -1,23 +1,22 @@
 import { describe, it, expect, vi } from 'vitest';
 import { saveData } from './save.js';
 
-// Faithfully simulates the real CAS Lua script's behavior (numeric version
-// compare + two SETs) so the three correctness tests below exercise the
-// real merge/settings logic exactly as it runs in production, without a
-// live Redis. The two retry-specific tests further down use a simpler,
-// hand-scripted eval mock instead, because they're testing casUpdate's
-// retry orchestration itself, not the script's own correctness.
+// Simulates the real CAS design: reading and writing both go through
+// `eval` now (no plain `.get()`/`.set()` in the code under test), so the
+// fake dispatches on argument shape: a read call passes an empty args
+// array, a write (CAS) call passes [expectedRaw, newRaw].
 function fakeRedis(store) {
-  const versions = {};
   return {
-    get: vi.fn((key) => Promise.resolve(store[key] ?? null)),
     eval: vi.fn((script, keys, args) => {
-      const [dataKey, versionKey] = keys;
-      const [expectedVersion, newValueJson, newVersion] = args;
-      const curVersion = String(versions[versionKey] || 0);
-      if (curVersion !== expectedVersion) return Promise.resolve(0);
-      store[dataKey] = JSON.parse(newValueJson);
-      versions[versionKey] = Number(newVersion);
+      const [key] = keys;
+      if (args.length === 0) {
+        return Promise.resolve(store[key] !== undefined ? JSON.stringify(store[key]) : null);
+      }
+      const [expectedRaw, newRaw] = args;
+      const curRaw = store[key] !== undefined ? JSON.stringify(store[key]) : null;
+      const matches = expectedRaw === '' ? curRaw === null : curRaw === expectedRaw;
+      if (!matches) return Promise.resolve(0);
+      store[key] = JSON.parse(newRaw);
       return Promise.resolve(1);
     }),
   };
@@ -44,33 +43,42 @@ describe('saveData', () => {
     expect(result).toEqual({ realExchangeRate: 33, other: 'x' });
   });
 
+  it('starts a brand new key from empty when nothing is stored yet', async () => {
+    const redis = fakeRedis({});
+    const result = await saveData(redis, 'orders', [{ id: 'a' }]);
+    expect(result).toEqual([{ id: 'a' }]);
+  });
+
   it('retries and succeeds after losing the CAS once to a concurrent writer', async () => {
-    // Simulates: our first attempt's version check loses the race (someone
-    // else wrote first). We must re-read (picking up their change) and
-    // retry, succeeding on the second attempt.
     const store = { 'preview:data:orders': [{ id: 'a' }] };
-    let evalCallCount = 0;
+    let writeAttempts = 0;
     const redis = {
-      get: vi.fn((key) => Promise.resolve(store[key] ?? null)),
-      eval: vi.fn(() => {
-        evalCallCount++;
-        if (evalCallCount === 1) return Promise.resolve(0); // lost the race
+      eval: vi.fn((script, keys, args) => {
+        if (args.length === 0) {
+          return Promise.resolve(JSON.stringify(store['preview:data:orders']));
+        }
+        writeAttempts++;
+        if (writeAttempts === 1) return Promise.resolve(0); // lost the race
         store['preview:data:orders'] = [{ id: 'c' }, { id: 'a' }]; // second attempt wins
         return Promise.resolve(1);
       }),
     };
     const result = await saveData(redis, 'orders', [{ id: 'c' }]);
-    expect(redis.eval).toHaveBeenCalledTimes(2);
+    const writeCalls = redis.eval.mock.calls.filter(([, , args]) => args.length > 0);
+    expect(writeCalls.length).toBe(2);
     expect(result).toEqual([{ id: 'c' }, { id: 'a' }]);
   });
 
   it('gives up after 5 consecutive conflicts instead of retrying forever', async () => {
     const store = { 'preview:data:orders': [{ id: 'a' }] };
     const redis = {
-      get: vi.fn((key) => Promise.resolve(store[key] ?? null)),
-      eval: vi.fn(() => Promise.resolve(0)), // always conflicts
+      eval: vi.fn((script, keys, args) => {
+        if (args.length === 0) return Promise.resolve(JSON.stringify(store['preview:data:orders']));
+        return Promise.resolve(0); // always conflicts
+      }),
     };
     await expect(saveData(redis, 'orders', [{ id: 'c' }])).rejects.toThrow(/Concurrent write conflict/);
-    expect(redis.eval).toHaveBeenCalledTimes(5);
+    const writeCalls = redis.eval.mock.calls.filter(([, , args]) => args.length > 0);
+    expect(writeCalls.length).toBe(5);
   });
 });
