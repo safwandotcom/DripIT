@@ -63,6 +63,12 @@ const T = {
   serif: "'Fraunces', 'Playfair Display', Georgia, serif",
   sans: "'Space Grotesk', 'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif",
   display: "'Space Grotesk', 'Inter Tight', sans-serif",
+  // Elevation/radius/motion scale — shared across cards, buttons, modals, dropdowns
+  radiusSm: 8, radiusMd: 12, radiusLg: 16,
+  shadowSm: '0 1px 2px rgba(15,15,15,0.04), 0 1px 1px rgba(15,15,15,0.03)',
+  shadowMd: '0 2px 6px rgba(15,15,15,0.05), 0 8px 20px rgba(15,15,15,0.06)',
+  shadowLg: '0 8px 24px rgba(15,15,15,0.10), 0 24px 60px rgba(15,15,15,0.14)',
+  ease: 'cubic-bezier(0.2, 0.7, 0.3, 1)',
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -930,7 +936,7 @@ export default function App() {
       {/* Navigation guard modal */}
       {showNavGuard && (
         <div onClick={cancelNav} style={{ position: 'fixed', inset: 0, background: 'rgba(15,15,15,0.5)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-          <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: T.surface, borderRadius: 14, padding: 28, maxWidth: 400, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+          <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: T.surface, borderRadius: T.radiusLg, padding: 28, maxWidth: 400, width: '90%', boxShadow: T.shadowLg }}>
             <div style={{ fontFamily: T.serif, fontSize: 22, fontWeight: 500, color: T.ink, marginBottom: 10 }}>Leave Post Maker?</div>
             <div style={{ fontSize: 14, color: T.muted, lineHeight: 1.7, marginBottom: 22 }}>
               You're in the middle of a project. <strong style={{ color: T.ink }}>Projects are not saved</strong> — once you leave, your work and all generated images will be lost.<br /><br />
@@ -997,17 +1003,18 @@ function getDefaultAccounts() {
 function GlobalStyles() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter+Tight:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&family=Alfa+Slab+One&family=Archivo+Black&family=Space+Mono:wght@400;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700;9..144,800&family=Inter+Tight:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&family=Alfa+Slab+One&family=Archivo+Black&family=Space+Mono:wght@400;700&display=swap');
       * { box-sizing: border-box; }
       body { margin: 0; font-family: ${T.sans}; }
       input, select, textarea, button { font-family: inherit; }
       .pcg-input {
         width: 100%; padding: 10px 14px;
         background: ${T.surface}; border: 1px solid ${T.border};
-        border-radius: 8px; color: ${T.ink}; font-size: 14px;
-        transition: all 0.15s; outline: none;
+        border-radius: ${T.radiusSm}px; color: ${T.ink}; font-size: 14px;
+        transition: border-color 0.2s ${T.ease}, box-shadow 0.2s ${T.ease}; outline: none;
       }
-      .pcg-input:focus { border-color: ${T.terracotta}; box-shadow: 0 0 0 3px ${T.terracotta}15; }
+      .pcg-input:hover { border-color: ${T.muted}70; }
+      .pcg-input:focus { border-color: ${T.terracotta}; box-shadow: 0 0 0 3px ${T.terracotta}18; }
       .pcg-input[type="number"]::-webkit-outer-spin-button,
       .pcg-input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
       .pcg-input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
@@ -1021,24 +1028,38 @@ function GlobalStyles() {
       .pcg-btn {
         display: inline-flex; align-items: center; gap: 6px;
         padding: 9px 16px; background: ${T.ink}; color: ${T.cream};
-        border: none; border-radius: 8px; font-size: 13px; font-weight: 500;
-        cursor: pointer; transition: all 0.15s;
+        border: none; border-radius: ${T.radiusSm}px; font-size: 13px; font-weight: 500;
+        cursor: pointer; transition: background 0.2s ${T.ease}, transform 0.15s ${T.ease}, box-shadow 0.2s ${T.ease};
+        box-shadow: ${T.shadowSm};
       }
-      .pcg-btn:hover { background: ${T.terracottaDark}; }
-      .pcg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-      .pcg-btn-secondary { background: ${T.surface}; color: ${T.ink}; border: 1px solid ${T.border}; }
-      .pcg-btn-secondary:hover { background: ${T.cream}; border-color: ${T.ink}; }
-      .pcg-btn-ghost { background: transparent; color: ${T.muted}; border: none; padding: 6px 10px; }
-      .pcg-btn-ghost:hover { color: ${T.ink}; background: ${T.cream}; }
+      .pcg-btn:hover { background: ${T.terracottaDark}; transform: translateY(-1px); box-shadow: ${T.shadowMd}; }
+      .pcg-btn:active { transform: translateY(0) scale(0.98); box-shadow: ${T.shadowSm}; }
+      .pcg-btn:focus-visible { outline: 2px solid ${T.terracotta}; outline-offset: 2px; }
+      .pcg-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+      .pcg-btn-secondary { background: ${T.surface}; color: ${T.ink}; border: 1px solid ${T.border}; box-shadow: none; }
+      .pcg-btn-secondary:hover { background: ${T.cream}; border-color: ${T.ink}; box-shadow: ${T.shadowSm}; }
+      .pcg-btn-ghost { background: transparent; color: ${T.muted}; border: none; padding: 6px 10px; box-shadow: none; }
+      .pcg-btn-ghost:hover { color: ${T.ink}; background: ${T.cream}; transform: none; box-shadow: none; }
+      .pcg-btn-ghost:active { transform: scale(0.96); }
       .pcg-btn-sm { padding: 6px 10px; font-size: 12px; }
-      .pcg-card { background: ${T.surface}; border: 1px solid ${T.borderSoft}; border-radius: 12px; padding: 20px; }
-      .pcg-row { transition: background 0.15s; }
+      .pcg-card {
+        background: ${T.surface}; border: 1px solid ${T.borderSoft}; border-radius: ${T.radiusMd}px; padding: 20px;
+        box-shadow: ${T.shadowSm}; transition: box-shadow 0.25s ${T.ease}, transform 0.25s ${T.ease};
+      }
+      .pcg-card-interactive { cursor: pointer; }
+      .pcg-card-interactive:hover { box-shadow: ${T.shadowMd}; transform: translateY(-2px); }
+      .pcg-row { transition: background 0.15s ${T.ease}; }
       .pcg-row:hover { background: ${T.cream}; cursor: pointer; }
+      button:focus-visible, [tabindex]:focus-visible { outline: 2px solid ${T.terracotta}; outline-offset: 2px; }
+      .sidebar-nav-item { transition: background 0.18s ${T.ease}, color 0.18s ${T.ease}; }
+      .sidebar-nav-item:hover { background: ${T.cream}; color: ${T.ink}; }
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 4px; }
-      .fade-in { animation: fadeIn 0.25s ease-out; }
+      .fade-in { animation: fadeIn 0.3s ${T.ease}; }
+      .toast-in { animation: toastIn 0.3s ${T.ease}; }
       .mobile-only { display: none; }
       @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       @media print {
         body * { visibility: hidden; }
@@ -1135,13 +1156,15 @@ function Sidebar({ view, setView, pendingNavigate, onConfirmNavigate, onCancelNa
       </div>
       <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {items.map(({ id, label, icon: Icon }) => (
-          <button key={id} onClick={() => pendingNavigate ? pendingNavigate(id) : setView(id)} style={{
+          <button key={id} onClick={() => pendingNavigate ? pendingNavigate(id) : setView(id)} className="sidebar-nav-item" style={{
             display: 'flex', alignItems: 'center', gap: 10,
             padding: '9px 12px', background: view === id ? T.cream : 'transparent',
-            border: 'none', borderRadius: 8, color: view === id ? T.ink : T.muted,
-            fontSize: 13.5, fontWeight: view === id ? 500 : 400, cursor: 'pointer', textAlign: 'left'
+            border: 'none', borderRadius: T.radiusSm, color: view === id ? T.ink : T.muted,
+            fontSize: 13.5, fontWeight: view === id ? 500 : 400, cursor: 'pointer', textAlign: 'left',
+            position: 'relative'
           }}>
-            <Icon size={16} strokeWidth={1.75} /> {label}
+            {view === id && <span style={{ position: 'absolute', left: -14, top: '50%', transform: 'translateY(-50%)', width: 3, height: 16, borderRadius: 2, background: T.terracotta }} />}
+            <Icon size={16} strokeWidth={1.75} color={view === id ? T.terracotta : T.muted} /> {label}
           </button>
         ))}
       </nav>
@@ -1299,7 +1322,7 @@ function Dashboard({ stats, orders, loans, accounts, ledger, onOpenOrder }) {
       <div className="dashboard-split" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div className="pcg-card" style={{ position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', bottom: -40, right: -40, width: 150, height: 150, borderRadius: '50%', background: 'radial-gradient(circle,rgba(94,92,230,0.07) 0%,transparent 70%)', pointerEvents: 'none' }} />
-          <h3 style={{ fontFamily: "'Times New Roman', Times, serif", fontSize: 16, margin: '0 0 18px', fontWeight: 800, color: T.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <h3 style={{ fontFamily: T.serif, fontSize: 16, margin: '0 0 18px', fontWeight: 800, color: T.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: T.indigo }} />
             Order Pipeline
           </h3>
@@ -1314,14 +1337,14 @@ function Dashboard({ stats, orders, loans, accounts, ledger, onOpenOrder }) {
                 {pct > 0 && <div style={{ width: 50, height: 5, background: '#F5EFEB', borderRadius: 10, overflow: 'hidden' }}>
                   <div style={{ width: `${pct}%`, height: '100%', background: s.color, borderRadius: 10 }} />
                 </div>}
-                <div style={{ fontSize: 17, fontFamily: "'Times New Roman', Times, serif", fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: count > 0 ? T.ink : T.muted, minWidth: 24, textAlign: 'right' }}>{count}</div>
+                <div style={{ fontSize: 17, fontFamily: T.serif, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: count > 0 ? T.ink : T.muted, minWidth: 24, textAlign: 'right' }}>{count}</div>
               </div>
             );
           })}
         </div>
 
         <div className="pcg-card">
-          <h3 style={{ fontFamily: "'Times New Roman', Times, serif", fontSize: 16, margin: '0 0 18px', fontWeight: 800, color: T.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <h3 style={{ fontFamily: T.serif, fontSize: 16, margin: '0 0 18px', fontWeight: 800, color: T.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: T.amber }} />
             Open Loans Summary
           </h3>
@@ -1331,11 +1354,11 @@ function Dashboard({ stats, orders, loans, accounts, ledger, onOpenOrder }) {
             <div>
               {loans.filter(l => l.status === 'open').slice(0, 5).map(l => (
                 <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `1px solid ${T.borderSoft}` }}>
-                  <div style={{ padding: '4px 10px', background: l.type === 'taken' ? '#FFF3CD' : '#D1FAE5', color: l.type === 'taken' ? '#92400E' : '#065F46', borderRadius: 20, fontSize: 10.5, fontWeight: 700, fontFamily: "'Times New Roman', Times, serif", textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <div style={{ padding: '4px 10px', background: l.type === 'taken' ? '#FFF3CD' : '#D1FAE5', color: l.type === 'taken' ? '#92400E' : '#065F46', borderRadius: 20, fontSize: 10.5, fontWeight: 700, fontFamily: T.serif, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     {l.type === 'taken' ? 'Payable' : 'Receivable'}
                   </div>
                   <div style={{ flex: 1, fontSize: 13.5, color: T.ink, fontWeight: 500 }}>{l.party}</div>
-                  <div style={{ fontFamily: "'Times New Roman', Times, serif", fontWeight: 800, fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>{fmtMoney(l.principal - (l.amountRepaid || 0), l.currency)}</div>
+                  <div style={{ fontFamily: T.serif, fontWeight: 800, fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>{fmtMoney(l.principal - (l.amountRepaid || 0), l.currency)}</div>
                 </div>
               ))}
             </div>
@@ -1345,7 +1368,7 @@ function Dashboard({ stats, orders, loans, accounts, ledger, onOpenOrder }) {
 
       <div className="pcg-card" style={{ marginTop: 16, position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: -50, right: -50, width: 180, height: 180, borderRadius: '50%', background: 'radial-gradient(circle,rgba(255,85,51,0.06) 0%,transparent 70%)', pointerEvents: 'none' }} />
-        <h3 style={{ fontFamily: "'Times New Roman', Times, serif", fontSize: 16, margin: '0 0 16px', fontWeight: 800, color: T.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <h3 style={{ fontFamily: T.serif, fontSize: 16, margin: '0 0 16px', fontWeight: 800, color: T.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: T.terracotta }} />
           Recent Orders
         </h3>
@@ -2121,8 +2144,8 @@ function NewOrder({ onSubmit, onCancel, defaultRate }) {
             <div style={{ position: 'absolute', top: -40, right: -40, width: 160, height: 160, borderRadius: '50%', background: 'radial-gradient(circle,rgba(255,85,51,0.2) 0%,transparent 70%)', pointerEvents: 'none' }} />
             <div style={{ position: 'absolute', bottom: -30, left: -30, width: 120, height: 120, borderRadius: '50%', background: 'radial-gradient(circle,rgba(94,92,230,0.15) 0%,transparent 70%)', pointerEvents: 'none' }} />
             <div style={{ position: 'relative', zIndex: 1 }}>
-              <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.16em', fontWeight: 700, fontFamily: "'Times New Roman', Times, serif", marginBottom: 10 }}>Live Calculation</div>
-              <div style={{ fontFamily: "'Times New Roman', Times, serif", fontSize: 30, fontWeight: 800, letterSpacing: '-0.03em', margin: '0 0 4px', fontVariantNumeric: 'tabular-nums', background: 'linear-gradient(135deg,#FF9F0A,#FF5533,#FF375F)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>{fmtBDT(calc.selling)}</div>
+              <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.16em', fontWeight: 700, fontFamily: T.serif, marginBottom: 10 }}>Live Calculation</div>
+              <div style={{ fontFamily: T.serif, fontSize: 30, fontWeight: 800, letterSpacing: '-0.03em', margin: '0 0 4px', fontVariantNumeric: 'tabular-nums', background: 'linear-gradient(135deg,#FF9F0A,#FF5533,#FF375F)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>{fmtBDT(calc.selling)}</div>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500 }}>Final Price · {form.items.filter(it => it.productName && (it.costRM || it.sellingBDT)).length} item{form.items.filter(it => it.productName && (it.costRM || it.sellingBDT)).length !== 1 ? 's' : ''}</div>
               <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '16px 0' }} />
               <PreviewRow label="Total Cost (RM)" value={fmtRM(calc.cost)} />
@@ -2164,7 +2187,7 @@ function NewOrder({ onSubmit, onCancel, defaultRate }) {
                 </>
               )}
               <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '14px 0 12px' }} />
-              <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, fontFamily: "'Times New Roman', Times, serif", marginBottom: 10 }}>Auto-generated</div>
+              <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, fontFamily: T.serif, marginBottom: 10 }}>Auto-generated</div>
               {[
                 'Order entry created',
                 'Invoice with QR generated',
@@ -2187,7 +2210,7 @@ function NewOrder({ onSubmit, onCancel, defaultRate }) {
 
 const priceModeBtn = (active) => ({
   flex: 1, padding: '9px 12px', fontSize: 12.5, fontWeight: 700,
-  fontFamily: "'Times New Roman', Times, serif",
+  fontFamily: T.serif,
   background: active ? 'linear-gradient(135deg,#FF5533,#FF375F)' : '#fff',
   color: active ? '#fff' : T.muted,
   border: active ? 'none' : `1.5px solid ${T.border}`,
@@ -2198,14 +2221,14 @@ const priceModeBtn = (active) => ({
 
 const priceBox = {
   padding: '11px 15px', background: '#FFF8F5', border: `1.5px solid #EDE5E0`,
-  borderRadius: 12, fontFamily: "'Times New Roman', Times, serif", fontSize: 16, fontWeight: 800,
+  borderRadius: 12, fontFamily: T.serif, fontSize: 16, fontWeight: 800,
   fontVariantNumeric: 'tabular-nums', color: T.terracotta
 };
 
 function Section({ title, children, last }) {
   return (
     <div style={{ paddingBottom: last ? 0 : 20, marginBottom: last ? 0 : 20, borderBottom: last ? 'none' : `1.5px solid ${T.borderSoft}` }}>
-      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 14, fontFamily: "'Times New Roman', Times, serif", display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 14, fontFamily: T.serif, display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ width: 14, height: 3, borderRadius: 2, background: T.terracotta }} />
         {title}
       </div>
@@ -5809,7 +5832,7 @@ function EditModal({ title, onClose, onSave, children }) {
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,15,15,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, backdropFilter: 'blur(6px)' }}>
       <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: T.cream, borderRadius: 14, width: '90%', maxWidth: 560, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '18px 24px', borderBottom: `1.5px solid ${T.border}`, background: T.cream, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ fontFamily: "'Times New Roman', Times, serif", fontSize: 18, margin: 0, fontWeight: 800, color: T.ink }}>{title}</h3>
+          <h3 style={{ fontFamily: T.serif, fontSize: 18, margin: 0, fontWeight: 800, color: T.ink }}>{title}</h3>
           <button onClick={onClose} className="pcg-btn pcg-btn-ghost"><X size={20} /></button>
         </div>
         <div style={{ padding: 24, overflowY: 'auto', flex: 1 }}>{children}</div>
@@ -5835,11 +5858,11 @@ function EmptyState({ text }) {
 
 function Toast({ toast }) {
   return (
-    <div style={{
-      position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+    <div className="toast-in" style={{
+      position: 'fixed', bottom: 24, left: '50%',
       background: toast.type === 'error' ? T.terracotta : T.ink, color: T.cream,
-      padding: '12px 20px', borderRadius: 10, fontSize: 14, fontWeight: 500, zIndex: 1000,
-      boxShadow: '0 10px 40px rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', gap: 8
+      padding: '12px 20px', borderRadius: T.radiusMd, fontSize: 14, fontWeight: 500, zIndex: 1000,
+      boxShadow: T.shadowLg, display: 'flex', alignItems: 'center', gap: 8
     }}>
       {toast.type === 'error' ? <AlertCircle size={16} /> : <Check size={16} />}
       {toast.msg}
