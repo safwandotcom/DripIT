@@ -4760,7 +4760,20 @@ function PostMaker({ company, showToast }) {
           )}
 
           <div className="pcg-card" style={{ padding: 16 }}>
-            <div style={{ fontFamily: T.serif, fontSize: 15, fontWeight: 500, color: T.ink, marginBottom: 11 }}>{isEditing ? '✏️ Edit Product' : 'Add Product'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11 }}>
+              <div style={{ fontFamily: T.serif, fontSize: 15, fontWeight: 500, color: T.ink }}>{isEditing ? '✏️ Edit Product' : 'Add Product'}</div>
+              {!isEditing && (activeImage || editForm.productName || editForm.price) && (
+                <button
+                  type="button"
+                  onClick={() => { setEditForm(blankPost()); setFetchError(''); }}
+                  className="pcg-btn pcg-btn-ghost pcg-btn-sm"
+                  style={{ color: T.terracotta }}
+                  title="Clear the photo and this form, ready for the next product"
+                >
+                  <Trash2 size={12} /> Remove Photo & Start Next
+                </button>
+              )}
+            </div>
 
             {/* Image tabs */}
             <div style={{ display: 'flex', gap: 0, marginBottom: 11, border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
