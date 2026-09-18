@@ -300,29 +300,11 @@ const _local = {
 };
 
 const storage = {
+  // `load` stays local-only — Task 8's load effect fetches everything from
+  // the server itself right after this resolves. This function now exists
+  // only to serve the "instant paint from cache" first half of that effect,
+  // and for po_current_company, which never goes through the server at all.
   async load(key, fallback) {
-    // 1) Try Google Sheets first if configured (it's the source of truth)
-    const entity = KEY_TO_ENTITY[key];
-    if (API_URL && entity && entity !== '__local__') {
-      try {
-        const res = await fetch(`${API_URL}?action=list&entity=${entity}`);
-        const body = await res.json();
-        if (body.ok) {
-          if (entity === 'counters') {
-            const merged = {};
-            body.data.forEach(c => { merged[c.id] = c; });
-            const result = Object.keys(merged).length ? merged : fallback;
-            _local.set(key, JSON.stringify(result)); // cache locally
-            return result;
-          }
-          _local.set(key, JSON.stringify(body.data)); // cache locally
-          return body.data;
-        }
-      } catch (err) {
-        console.warn('Sheets load failed, using local copy for', key, err);
-      }
-    }
-    // 2) Fall back to localStorage (always works, survives sleep/restart)
     try {
       const raw = _local.get(key);
       return raw ? JSON.parse(raw) : fallback;
@@ -330,35 +312,25 @@ const storage = {
   },
 
   async save(key, value) {
-    // Always save locally first so nothing is ever lost
+    // Always save locally first so nothing is ever lost, even offline.
     try { _local.set(key, JSON.stringify(value)); } catch (e) { console.error(e); }
 
-    // Then sync to Google Sheets if configured.
-    // NOTE: We send body as text/plain to avoid a CORS preflight (Apps Script
-    // doesn't reply to OPTIONS requests). Apps Script reads e.postData.contents
-    // either way, so the JSON body still parses on the server.
+    // po_current_company is a per-device UI preference — never synced.
     const entity = KEY_TO_ENTITY[key];
-    // Effective URL: hardcoded constant OR URL saved by user in Export & Sync
-    const effectiveApiUrl = (typeof window !== 'undefined' && window.__PO_SHEETS_URL__) || API_URL;
-    if (!effectiveApiUrl || !entity || entity === '__local__') return;
+    if (!entity || entity === '__local__' || entity === 'counters') return;
+
+    // Everything else is shared business data — push to the server, which
+    // merges by id (arrays) or shallow-merges (settings) rather than
+    // blindly overwriting, so two devices saving around the same time
+    // can't erase each other's changes. See api/data/save.js.
     try {
-      if (entity === 'counters') {
-        for (const company of Object.keys(value)) {
-          await fetch(effectiveApiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'save', entity, data: { id: company, ...value[company] } })
-          });
-        }
-      } else {
-        await fetch(effectiveApiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'replaceAll', entity, data: value })
-        });
-      }
+      await fetch('/api/data/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: entity, value })
+      });
     } catch (err) {
-      console.warn('Sheets save failed (saved locally) for', key, err);
+      console.warn('Server save failed (saved locally) for', key, err);
     }
   }
 };
@@ -670,6 +642,10 @@ export default function App() {
   const deleteOrder = (id) => {
     if (!confirm('Delete this order record? Its payment history stays in Books & Ledger and its invoice is kept, so your account balances and invoice sequence stay accurate — only the order entry itself is removed. Use Cancel instead if you just want to mark it inactive.')) return;
     setOrders(prev => prev.filter(o => o.id !== id));
+    fetch('/api/data/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'orders', id })
+    }).catch(err => console.warn('Server delete failed for order', id, err));
     setSelectedOrder(null);
     showToast('Order deleted — its ledger entries and invoice were kept');
   };
@@ -768,6 +744,10 @@ export default function App() {
   const deleteExpense = (id) => {
     if (!confirm('Delete this expense record? Its matching entry stays in Books & Ledger so account balances stay accurate — only the expense record itself is removed.')) return;
     setExpenses(prev => prev.filter(e => e.id !== id));
+    fetch('/api/data/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'expenses', id })
+    }).catch(err => console.warn('Server delete failed for expense', id, err));
     showToast('Expense deleted — its ledger entry was kept');
   };
 
@@ -809,6 +789,10 @@ export default function App() {
   const deleteLoan = (id) => {
     if (!confirm('Delete this loan record? Its matching entries stay in Books & Ledger so account balances stay accurate — only the loan record itself is removed.')) return;
     setLoans(loans.filter(l => l.id !== id));
+    fetch('/api/data/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'loans', id })
+    }).catch(err => console.warn('Server delete failed for loan', id, err));
     showToast('Loan deleted — its ledger entries were kept');
   };
   const recordRepayment = (loan, amount, date) => {
@@ -931,6 +915,10 @@ export default function App() {
   const deleteAccount = (id) => {
     if (!confirm('Delete this account? Existing transactions will remain.')) return;
     setAccounts(accounts.filter(a => a.id !== id));
+    fetch('/api/data/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'accounts', id })
+    }).catch(err => console.warn('Server delete failed for account', id, err));
     showToast('Account deleted');
   };
 
