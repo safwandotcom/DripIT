@@ -27,11 +27,18 @@ return 0
 `;
 
 export async function casUpdate(redis, key, computeNext, attempt = 0) {
-  const raw = await redis.eval(READ_SCRIPT, [key], []);
-  const existing = raw ? JSON.parse(raw) : null;
+  // @upstash/redis auto-deserializes JSON responses by default — for
+  // .eval() exactly like .get() — so `existing` here is already the
+  // parsed value (or null if the key doesn't exist), never a raw
+  // string. Re-stringify it to reconstruct the exact raw string Lua's
+  // own internal GET will compare byte-for-byte: this round-trips
+  // deterministically because we're the only writer and always wrote
+  // via JSON.stringify in the first place.
+  const existing = await redis.eval(READ_SCRIPT, [key], []);
+  const rawForCompare = existing === null ? '' : JSON.stringify(existing);
   const next = computeNext(existing);
   const nextRaw = JSON.stringify(next);
-  const ok = await redis.eval(CAS_SCRIPT, [key], [raw === null ? '' : raw, nextRaw]);
+  const ok = await redis.eval(CAS_SCRIPT, [key], [rawForCompare, nextRaw]);
   if (ok === 1) return next;
   if (attempt >= MAX_CAS_ATTEMPTS - 1) {
     throw new Error(`Concurrent write conflict on ${key} after ${MAX_CAS_ATTEMPTS} attempts`);

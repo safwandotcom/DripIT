@@ -6,7 +6,9 @@ function fakeRedis(store) {
     eval: vi.fn((script, keys, args) => {
       const [key] = keys;
       if (args.length === 0) {
-        return Promise.resolve(store[key] !== undefined ? JSON.stringify(store[key]) : null);
+        // Real @upstash/redis auto-deserializes eval results, same as
+        // .get() — return the parsed value directly, not a JSON string.
+        return Promise.resolve(store[key] !== undefined ? store[key] : null);
       }
       const [expectedRaw, newRaw] = args;
       const curRaw = store[key] !== undefined ? JSON.stringify(store[key]) : null;
@@ -39,7 +41,7 @@ describe('casUpdate', () => {
     let writeAttempts = 0;
     const redis = {
       eval: vi.fn((script, keys, args) => {
-        if (args.length === 0) return Promise.resolve(JSON.stringify(store['k']));
+        if (args.length === 0) return Promise.resolve(store['k']);
         writeAttempts++;
         if (writeAttempts === 1) return Promise.resolve(0); // lost the race
         store['k'] = ['a', 'c'];
@@ -56,7 +58,7 @@ describe('casUpdate', () => {
     const store = { k: ['a'] };
     const redis = {
       eval: vi.fn((script, keys, args) => {
-        if (args.length === 0) return Promise.resolve(JSON.stringify(store['k']));
+        if (args.length === 0) return Promise.resolve(store['k']);
         return Promise.resolve(0); // always conflicts
       }),
     };

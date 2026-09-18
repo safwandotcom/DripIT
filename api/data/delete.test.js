@@ -6,7 +6,9 @@ function fakeRedis(store) {
     eval: vi.fn((script, keys, args) => {
       const [key] = keys;
       if (args.length === 0) {
-        return Promise.resolve(store[key] !== undefined ? JSON.stringify(store[key]) : null);
+        // Real @upstash/redis auto-deserializes eval results, same as
+        // .get() — return the parsed value directly, not a JSON string.
+        return Promise.resolve(store[key] !== undefined ? store[key] : null);
       }
       const [expectedRaw, newRaw] = args;
       const curRaw = store[key] !== undefined ? JSON.stringify(store[key]) : null;
