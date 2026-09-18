@@ -277,8 +277,7 @@ const KEY_TO_ENTITY = {
   po_loans: 'loans',
   po_accounts: 'accounts',
   po_invoices: 'invoices',
-  po_counters: 'counters',
-  po_settings: '__local__',        // settings stay on this device only
+  po_settings: 'settings',         // shared business data (the real exchange rate) — synced
   po_current_company: '__local__'  // company toggle stays on this device only
 };
 
@@ -300,29 +299,11 @@ const _local = {
 };
 
 const storage = {
+  // `load` stays local-only — Task 8's load effect fetches everything from
+  // the server itself right after this resolves. This function now exists
+  // only to serve the "instant paint from cache" first half of that effect,
+  // and for po_current_company, which never goes through the server at all.
   async load(key, fallback) {
-    // 1) Try Google Sheets first if configured (it's the source of truth)
-    const entity = KEY_TO_ENTITY[key];
-    if (API_URL && entity && entity !== '__local__') {
-      try {
-        const res = await fetch(`${API_URL}?action=list&entity=${entity}`);
-        const body = await res.json();
-        if (body.ok) {
-          if (entity === 'counters') {
-            const merged = {};
-            body.data.forEach(c => { merged[c.id] = c; });
-            const result = Object.keys(merged).length ? merged : fallback;
-            _local.set(key, JSON.stringify(result)); // cache locally
-            return result;
-          }
-          _local.set(key, JSON.stringify(body.data)); // cache locally
-          return body.data;
-        }
-      } catch (err) {
-        console.warn('Sheets load failed, using local copy for', key, err);
-      }
-    }
-    // 2) Fall back to localStorage (always works, survives sleep/restart)
     try {
       const raw = _local.get(key);
       return raw ? JSON.parse(raw) : fallback;
@@ -330,35 +311,25 @@ const storage = {
   },
 
   async save(key, value) {
-    // Always save locally first so nothing is ever lost
+    // Always save locally first so nothing is ever lost, even offline.
     try { _local.set(key, JSON.stringify(value)); } catch (e) { console.error(e); }
 
-    // Then sync to Google Sheets if configured.
-    // NOTE: We send body as text/plain to avoid a CORS preflight (Apps Script
-    // doesn't reply to OPTIONS requests). Apps Script reads e.postData.contents
-    // either way, so the JSON body still parses on the server.
+    // po_current_company is a per-device UI preference — never synced.
     const entity = KEY_TO_ENTITY[key];
-    // Effective URL: hardcoded constant OR URL saved by user in Export & Sync
-    const effectiveApiUrl = (typeof window !== 'undefined' && window.__PO_SHEETS_URL__) || API_URL;
-    if (!effectiveApiUrl || !entity || entity === '__local__') return;
+    if (!entity || entity === '__local__' || entity === 'counters') return;
+
+    // Everything else is shared business data — push to the server, which
+    // merges by id (arrays) or shallow-merges (settings) rather than
+    // blindly overwriting, so two devices saving around the same time
+    // can't erase each other's changes. See api/data/save.js.
     try {
-      if (entity === 'counters') {
-        for (const company of Object.keys(value)) {
-          await fetch(effectiveApiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'save', entity, data: { id: company, ...value[company] } })
-          });
-        }
-      } else {
-        await fetch(effectiveApiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'replaceAll', entity, data: value })
-        });
-      }
+      await fetch('/api/data/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: entity, value })
+      });
     } catch (err) {
-      console.warn('Sheets save failed (saved locally) for', key, err);
+      console.warn('Server save failed (saved locally) for', key, err);
     }
   }
 };
@@ -370,6 +341,13 @@ export default function App() {
   const [view, setView] = useState('dashboard');
   const [currentCompany, setCurrentCompany] = useState('drip_ittt');
   const [loaded, setLoaded] = useState(false);
+  // Gates the persist effects below: starts false so neither the instant
+  // local-cache paint nor the server-reconcile step (both of which SET
+  // state to data we just loaded, never something a user changed) can
+  // trigger an auto-push back to the server. Only flips true once the
+  // reconcile attempt finishes — see the load effect's `finally` block.
+  // A ref, not state, so flipping it doesn't itself cause a re-render.
+  const initialSyncDoneRef = useRef(false);
 
   // Data state
   const [orders, setOrders] = useState([]);
@@ -378,12 +356,6 @@ export default function App() {
   const [loans, setLoans] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [invoices, setInvoices] = useState([]);
-  const [counters, setCounters] = useState({});
-  // Mirrors `counters` but updates synchronously — `addOrder`/`addInvoice` read+write
-  // this ref directly so two calls in the same tick (rapid clicks) can never reserve
-  // the same order/invoice number, which React state (async/batched) can't guarantee.
-  const countersRef = useRef({});
-  useEffect(() => { countersRef.current = counters; }, [counters]);
 
   // UI state
   const [toast, setToast] = useState(null);
@@ -399,20 +371,10 @@ export default function App() {
   const [ownerDrawPrompt, setOwnerDrawPrompt] = useState(false);
   const [settings, setSettings] = useState({ realExchangeRate: 32 });
 
-  // Load
+  // Load — render instantly from local cache, then reconcile with the
+  // server in the background so the UI never blocks on a network round trip.
   useEffect(() => {
-    (async () => {
-      const [o, e, l, ln, ac, inv, ct, cc, st] = await Promise.all([
-        storage.load('po_orders', []),
-        storage.load('po_expenses', []),
-        storage.load('po_ledger', []),
-        storage.load('po_loans', []),
-        storage.load('po_accounts', getDefaultAccounts()),
-        storage.load('po_invoices', []),
-        storage.load('po_counters', { drip_ittt: { order: 1, invoice: 1 }, NOVUS: { order: 1, invoice: 1 } }),
-        storage.load('po_current_company', 'drip_ittt'),
-        storage.load('po_settings', { realExchangeRate: 32 })
-      ]);
+    const applyData = (o, e, l, ln, ac, inv, st) => {
       setOrders(o.map(x => ({ company: 'drip_ittt', ...x })));
       // One-time migration: RM entries recorded before rate-locking existed have no
       // lockedRate. Freeze them at today's rate now so they stop drifting when the
@@ -424,23 +386,66 @@ export default function App() {
       setLoans(ln);
       setAccounts(ac);
       setInvoices(inv);
-      setCounters(ct);
-      setCurrentCompany(cc);
       setSettings(st);
+    };
+
+    (async () => {
+      // 1) Instant paint from whatever's cached locally (empty on a brand
+      // new device — that's fine, the server fetch right after fills it in).
+      const [o, e, l, ln, ac, inv, cc, st] = await Promise.all([
+        storage.load('po_orders', []),
+        storage.load('po_expenses', []),
+        storage.load('po_ledger', []),
+        storage.load('po_loans', []),
+        storage.load('po_accounts', getDefaultAccounts()),
+        storage.load('po_invoices', []),
+        storage.load('po_current_company', 'drip_ittt'),
+        storage.load('po_settings', { realExchangeRate: 32 })
+      ]);
+      applyData(o, e, l, ln, ac, inv, st);
+      setCurrentCompany(cc);
       setLoaded(true);
+
+      // 2) Reconcile with the server — this is the shared, authoritative copy.
+      try {
+        const res = await fetch('/api/data');
+        if (res.ok) {
+          const server = await res.json();
+          applyData(
+            server.orders, server.expenses, server.ledger, server.loans,
+            server.accounts, server.invoices, server.settings
+          );
+          // Keep the local cache in sync with what the server just gave us.
+          _local.set('po_orders', JSON.stringify(server.orders));
+          _local.set('po_expenses', JSON.stringify(server.expenses));
+          _local.set('po_ledger', JSON.stringify(server.ledger));
+          _local.set('po_loans', JSON.stringify(server.loans));
+          _local.set('po_accounts', JSON.stringify(server.accounts));
+          _local.set('po_invoices', JSON.stringify(server.invoices));
+          _local.set('po_settings', JSON.stringify(server.settings));
+        }
+      } catch (err) {
+        console.warn('Could not reach the server — showing locally cached data', err);
+      } finally {
+        // Only now is it safe to let the persist effects push state to the
+        // server — everything set before this point was just LOADED (from
+        // cache or from the server), never something a user changed.
+        initialSyncDoneRef.current = true;
+      }
     })();
   }, []);
 
-  // Persist
-  useEffect(() => { if (loaded) storage.save('po_orders', orders); }, [orders, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_expenses', expenses); }, [expenses, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_ledger', ledger); }, [ledger, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_loans', loans); }, [loans, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_accounts', accounts); }, [accounts, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_invoices', invoices); }, [invoices, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_counters', counters); }, [counters, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_current_company', currentCompany); }, [currentCompany, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_settings', settings); }, [settings, loaded]);
+  // Persist — gated on initialSyncDoneRef (see the load effect above) so
+  // the initial load/reconcile sequence itself never triggers a save; only
+  // a real change after that point does.
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_orders', orders); }, [orders, loaded]);
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_expenses', expenses); }, [expenses, loaded]);
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_ledger', ledger); }, [ledger, loaded]);
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_loans', loans); }, [loans, loaded]);
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_accounts', accounts); }, [accounts, loaded]);
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_invoices', invoices); }, [invoices, loaded]);
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_current_company', currentCompany); }, [currentCompany, loaded]);
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_settings', settings); }, [settings, loaded]);
 
   // Prevent scroll wheel from changing number input values globally
   useEffect(() => {
@@ -476,40 +481,36 @@ export default function App() {
   const cAccounts = useMemo(() => accounts.filter(a => a.company === currentCompany), [accounts, currentCompany]);
   const cInvoices = useMemo(() => invoices.filter(i => i.company === currentCompany), [invoices, currentCompany]);
 
-  // Compute the next safe number for orders/invoices by scanning what already exists.
-  // This avoids stale-state bugs when nextCounter is called twice in one render.
-  const computeNextNumber = (type, companyOrders, companyInvoices, savedCounters) => {
-    const items = type === 'order' ? companyOrders : companyInvoices;
-    const prefix = type === 'order'
-      ? (currentCompany === 'NOVUS' ? 'NV-' : 'DI-')
-      : (currentCompany === 'NOVUS' ? 'NV-INV-' : 'DI-INV-');
-    let maxFromData = 0;
-    items.forEach(it => {
-      const num = type === 'order' ? it.orderNumber : it.invoiceNumber;
-      if (num && num.startsWith(prefix)) {
-        const n = parseInt(num.slice(prefix.length), 10);
-        if (!isNaN(n) && n > maxFromData) maxFromData = n;
-      }
-    });
-    const savedCounter = (savedCounters[currentCompany] || {})[type] || 1;
-    return Math.max(maxFromData + 1, savedCounter);
-  };
-
   // === ORDER OPS ===
-  const addOrder = (data) => {
-    // Read + reserve from the ref (synchronous) so a second call in the same tick
-    // never computes the same number — see countersRef comment above.
-    const orderN = computeNextNumber('order', cOrders, cInvoices, countersRef.current);
-    const invoiceN = computeNextNumber('invoice', cOrders, cInvoices, countersRef.current);
+  const addOrder = async (data) => {
+    // Server-assigned, atomically incremented — two devices creating an
+    // order at the same moment cannot receive the same number, unlike a
+    // client-computed "max existing + 1".
+    let orderN, invoiceN;
+    try {
+      const [orderRes, invoiceRes] = await Promise.all([
+        fetch('/api/next-number', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company: currentCompany, type: 'order' })
+        }).then(r => r.json()),
+        fetch('/api/next-number', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company: currentCompany, type: 'invoice' })
+        }).then(r => r.json()),
+      ]);
+      orderN = orderRes.number;
+      invoiceN = invoiceRes.number;
+    } catch (err) {
+      // network failure — orderN/invoiceN stay undefined, caught below
+    }
+    if (typeof orderN !== 'number' || typeof invoiceN !== 'number') {
+      showToast('Could not create the order — no connection to the server. Please check your connection and try again.', 'error');
+      return;
+    }
     const orderPrefix = currentCompany === 'NOVUS' ? 'NV' : 'DI';
     const invPrefix = currentCompany === 'NOVUS' ? 'NV-INV' : 'DI-INV';
     const orderNumber = `${orderPrefix}-${String(orderN).padStart(4, '0')}`;
     const invoiceNumber = `${invPrefix}-${String(invoiceN).padStart(4, '0')}`;
-
-    // Reserve both numbers immediately (ref, not state) and bump both counters
-    const curCounters = countersRef.current[currentCompany] || { order: 1, invoice: 1 };
-    countersRef.current = { ...countersRef.current, [currentCompany]: { ...curCounters, order: orderN + 1, invoice: invoiceN + 1 } };
-    setCounters(countersRef.current);
 
     const newOrder = {
       id: uid(), company: currentCompany, orderNumber, ...data,
@@ -643,6 +644,10 @@ export default function App() {
   const deleteOrder = (id) => {
     if (!confirm('Delete this order record? Its payment history stays in Books & Ledger and its invoice is kept, so your account balances and invoice sequence stay accurate — only the order entry itself is removed. Use Cancel instead if you just want to mark it inactive.')) return;
     setOrders(prev => prev.filter(o => o.id !== id));
+    fetch('/api/data/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'orders', id })
+    }).catch(err => console.warn('Server delete failed for order', id, err));
     setSelectedOrder(null);
     showToast('Order deleted — its ledger entries and invoice were kept');
   };
@@ -696,7 +701,14 @@ export default function App() {
   };
 
   const removeOrderPayment = (orderId, kind) => {
+    const toRemove = ledger.filter(l => l.relatedOrderId === orderId && l.kind === kind);
     setLedger(prev => prev.filter(l => !(l.relatedOrderId === orderId && l.kind === kind)));
+    toRemove.forEach(l => {
+      fetch('/api/data/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'ledger', id: l.id })
+      }).catch(err => console.warn('Server delete failed for ledger entry', l.id, err));
+    });
   };
 
   // === EXPENSE OPS (auto-syncs to ledger) ===
@@ -741,6 +753,10 @@ export default function App() {
   const deleteExpense = (id) => {
     if (!confirm('Delete this expense record? Its matching entry stays in Books & Ledger so account balances stay accurate — only the expense record itself is removed.')) return;
     setExpenses(prev => prev.filter(e => e.id !== id));
+    fetch('/api/data/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'expenses', id })
+    }).catch(err => console.warn('Server delete failed for expense', id, err));
     showToast('Expense deleted — its ledger entry was kept');
   };
 
@@ -756,6 +772,10 @@ export default function App() {
   const deleteLedger = (id) => {
     if (!confirm('Delete this transaction?')) return;
     setLedger(ledger.filter(l => l.id !== id));
+    fetch('/api/data/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'ledger', id })
+    }).catch(err => console.warn('Server delete failed for ledger entry', id, err));
     showToast('Transaction deleted');
   };
 
@@ -782,6 +802,10 @@ export default function App() {
   const deleteLoan = (id) => {
     if (!confirm('Delete this loan record? Its matching entries stay in Books & Ledger so account balances stay accurate — only the loan record itself is removed.')) return;
     setLoans(loans.filter(l => l.id !== id));
+    fetch('/api/data/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'loans', id })
+    }).catch(err => console.warn('Server delete failed for loan', id, err));
     showToast('Loan deleted — its ledger entries were kept');
   };
   const recordRepayment = (loan, amount, date) => {
@@ -904,17 +928,31 @@ export default function App() {
   const deleteAccount = (id) => {
     if (!confirm('Delete this account? Existing transactions will remain.')) return;
     setAccounts(accounts.filter(a => a.id !== id));
+    fetch('/api/data/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'accounts', id })
+    }).catch(err => console.warn('Server delete failed for account', id, err));
     showToast('Account deleted');
   };
 
   // === INVOICE OPS ===
-  const addInvoice = (data) => {
-    const n = computeNextNumber('invoice', cOrders, cInvoices, countersRef.current);
+  const addInvoice = async (data) => {
+    let n;
+    try {
+      const res = await fetch('/api/next-number', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company: currentCompany, type: 'invoice' })
+      }).then(r => r.json());
+      n = res.number;
+    } catch (err) {
+      // network failure — n stays undefined, caught below
+    }
+    if (typeof n !== 'number') {
+      showToast('Could not create the invoice — no connection to the server. Please check your connection and try again.', 'error');
+      return;
+    }
     const prefix = currentCompany === 'NOVUS' ? 'NV-INV' : 'DI-INV';
     const invoiceNumber = `${prefix}-${String(n).padStart(4, '0')}`;
-    const curCounters = countersRef.current[currentCompany] || { order: 1, invoice: 1 };
-    countersRef.current = { ...countersRef.current, [currentCompany]: { ...curCounters, invoice: n + 1 } };
-    setCounters(countersRef.current);
     const inv = { id: uid(), company: currentCompany, invoiceNumber, ...data };
     setInvoices([inv, ...invoices]);
     showToast(`Invoice ${invoiceNumber} created`);
@@ -927,6 +965,10 @@ export default function App() {
   const deleteInvoice = (id) => {
     if (!confirm('Delete this invoice?')) return;
     setInvoices(invoices.filter(i => i.id !== id));
+    fetch('/api/data/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'invoices', id })
+    }).catch(err => console.warn('Server delete failed for invoice', id, err));
     showToast('Invoice deleted');
   };
 
