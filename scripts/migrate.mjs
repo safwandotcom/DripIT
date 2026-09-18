@@ -1,8 +1,15 @@
 // One-time migration: seed Redis from a JSON export of the production
 // browser's localStorage (same shape as the exports used for the earlier
-// local-dev -> production data merge). Run manually:
+// local-dev -> production data merge). Run manually, using either the
+// raw Upstash env var names or the ones Vercel's Marketplace Upstash
+// integration actually injects (check your Vercel project's
+// Environment Variables page — it's usually KV_REST_API_URL / _TOKEN):
 //
 //   UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... \
+//     node scripts/migrate.mjs path/to/export.json [--env=preview|prod]
+//
+//   # or, matching Vercel's actual env var names:
+//   KV_REST_API_URL=... KV_REST_API_TOKEN=... \
 //     node scripts/migrate.mjs path/to/export.json [--env=preview|prod]
 //
 // The export JSON is expected to have the shape:
@@ -21,8 +28,12 @@ if (!exportPath) {
 const prefix = envFlag === '--env=prod' ? 'prod' : 'preview';
 
 const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  // Vercel's Marketplace Upstash integration injects KV_REST_API_URL /
+  // KV_REST_API_TOKEN (Vercel's older "KV" naming); a raw Upstash
+  // account/integration would use UPSTASH_REDIS_REST_URL / _TOKEN
+  // instead — both are checked, same as api/_lib/redis.js.
+  url: process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN,
 });
 
 const exportData = JSON.parse(readFileSync(exportPath, 'utf-8'));

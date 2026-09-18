@@ -277,7 +277,7 @@ const KEY_TO_ENTITY = {
   po_loans: 'loans',
   po_accounts: 'accounts',
   po_invoices: 'invoices',
-  po_settings: '__local__',        // settings stay on this device only
+  po_settings: 'settings',         // shared business data (the real exchange rate) — synced
   po_current_company: '__local__'  // company toggle stays on this device only
 };
 
@@ -486,16 +486,27 @@ export default function App() {
     // Server-assigned, atomically incremented — two devices creating an
     // order at the same moment cannot receive the same number, unlike a
     // client-computed "max existing + 1".
-    const [orderN, invoiceN] = await Promise.all([
-      fetch('/api/next-number', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company: currentCompany, type: 'order' })
-      }).then(r => r.json()).then(r => r.number),
-      fetch('/api/next-number', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company: currentCompany, type: 'invoice' })
-      }).then(r => r.json()).then(r => r.number),
-    ]);
+    let orderN, invoiceN;
+    try {
+      const [orderRes, invoiceRes] = await Promise.all([
+        fetch('/api/next-number', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company: currentCompany, type: 'order' })
+        }).then(r => r.json()),
+        fetch('/api/next-number', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company: currentCompany, type: 'invoice' })
+        }).then(r => r.json()),
+      ]);
+      orderN = orderRes.number;
+      invoiceN = invoiceRes.number;
+    } catch (err) {
+      // network failure — orderN/invoiceN stay undefined, caught below
+    }
+    if (typeof orderN !== 'number' || typeof invoiceN !== 'number') {
+      showToast('Could not create the order — no connection to the server. Please check your connection and try again.', 'error');
+      return;
+    }
     const orderPrefix = currentCompany === 'NOVUS' ? 'NV' : 'DI';
     const invPrefix = currentCompany === 'NOVUS' ? 'NV-INV' : 'DI-INV';
     const orderNumber = `${orderPrefix}-${String(orderN).padStart(4, '0')}`;
@@ -690,7 +701,14 @@ export default function App() {
   };
 
   const removeOrderPayment = (orderId, kind) => {
+    const toRemove = ledger.filter(l => l.relatedOrderId === orderId && l.kind === kind);
     setLedger(prev => prev.filter(l => !(l.relatedOrderId === orderId && l.kind === kind)));
+    toRemove.forEach(l => {
+      fetch('/api/data/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'ledger', id: l.id })
+      }).catch(err => console.warn('Server delete failed for ledger entry', l.id, err));
+    });
   };
 
   // === EXPENSE OPS (auto-syncs to ledger) ===
@@ -754,6 +772,10 @@ export default function App() {
   const deleteLedger = (id) => {
     if (!confirm('Delete this transaction?')) return;
     setLedger(ledger.filter(l => l.id !== id));
+    fetch('/api/data/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'ledger', id })
+    }).catch(err => console.warn('Server delete failed for ledger entry', id, err));
     showToast('Transaction deleted');
   };
 
@@ -915,10 +937,20 @@ export default function App() {
 
   // === INVOICE OPS ===
   const addInvoice = async (data) => {
-    const n = await fetch('/api/next-number', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company: currentCompany, type: 'invoice' })
-    }).then(r => r.json()).then(r => r.number);
+    let n;
+    try {
+      const res = await fetch('/api/next-number', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company: currentCompany, type: 'invoice' })
+      }).then(r => r.json());
+      n = res.number;
+    } catch (err) {
+      // network failure — n stays undefined, caught below
+    }
+    if (typeof n !== 'number') {
+      showToast('Could not create the invoice — no connection to the server. Please check your connection and try again.', 'error');
+      return;
+    }
     const prefix = currentCompany === 'NOVUS' ? 'NV-INV' : 'DI-INV';
     const invoiceNumber = `${prefix}-${String(n).padStart(4, '0')}`;
     const inv = { id: uid(), company: currentCompany, invoiceNumber, ...data };
@@ -933,6 +965,10 @@ export default function App() {
   const deleteInvoice = (id) => {
     if (!confirm('Delete this invoice?')) return;
     setInvoices(invoices.filter(i => i.id !== id));
+    fetch('/api/data/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'invoices', id })
+    }).catch(err => console.warn('Server delete failed for invoice', id, err));
     showToast('Invoice deleted');
   };
 
