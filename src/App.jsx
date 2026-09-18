@@ -399,20 +399,10 @@ export default function App() {
   const [ownerDrawPrompt, setOwnerDrawPrompt] = useState(false);
   const [settings, setSettings] = useState({ realExchangeRate: 32 });
 
-  // Load
+  // Load — render instantly from local cache, then reconcile with the
+  // server in the background so the UI never blocks on a network round trip.
   useEffect(() => {
-    (async () => {
-      const [o, e, l, ln, ac, inv, ct, cc, st] = await Promise.all([
-        storage.load('po_orders', []),
-        storage.load('po_expenses', []),
-        storage.load('po_ledger', []),
-        storage.load('po_loans', []),
-        storage.load('po_accounts', getDefaultAccounts()),
-        storage.load('po_invoices', []),
-        storage.load('po_counters', { drip_ittt: { order: 1, invoice: 1 }, NOVUS: { order: 1, invoice: 1 } }),
-        storage.load('po_current_company', 'drip_ittt'),
-        storage.load('po_settings', { realExchangeRate: 32 })
-      ]);
+    const applyData = (o, e, l, ln, ac, inv, st) => {
       setOrders(o.map(x => ({ company: 'drip_ittt', ...x })));
       // One-time migration: RM entries recorded before rate-locking existed have no
       // lockedRate. Freeze them at today's rate now so they stop drifting when the
@@ -424,10 +414,47 @@ export default function App() {
       setLoans(ln);
       setAccounts(ac);
       setInvoices(inv);
-      setCounters(ct);
-      setCurrentCompany(cc);
       setSettings(st);
+    };
+
+    (async () => {
+      // 1) Instant paint from whatever's cached locally (empty on a brand
+      // new device — that's fine, the server fetch right after fills it in).
+      const [o, e, l, ln, ac, inv, cc, st] = await Promise.all([
+        storage.load('po_orders', []),
+        storage.load('po_expenses', []),
+        storage.load('po_ledger', []),
+        storage.load('po_loans', []),
+        storage.load('po_accounts', getDefaultAccounts()),
+        storage.load('po_invoices', []),
+        storage.load('po_current_company', 'drip_ittt'),
+        storage.load('po_settings', { realExchangeRate: 32 })
+      ]);
+      applyData(o, e, l, ln, ac, inv, st);
+      setCurrentCompany(cc);
       setLoaded(true);
+
+      // 2) Reconcile with the server — this is the shared, authoritative copy.
+      try {
+        const res = await fetch('/api/data');
+        if (res.ok) {
+          const server = await res.json();
+          applyData(
+            server.orders, server.expenses, server.ledger, server.loans,
+            server.accounts, server.invoices, server.settings
+          );
+          // Keep the local cache in sync with what the server just gave us.
+          _local.set('po_orders', JSON.stringify(server.orders));
+          _local.set('po_expenses', JSON.stringify(server.expenses));
+          _local.set('po_ledger', JSON.stringify(server.ledger));
+          _local.set('po_loans', JSON.stringify(server.loans));
+          _local.set('po_accounts', JSON.stringify(server.accounts));
+          _local.set('po_invoices', JSON.stringify(server.invoices));
+          _local.set('po_settings', JSON.stringify(server.settings));
+        }
+      } catch (err) {
+        console.warn('Could not reach the server — showing locally cached data', err);
+      }
     })();
   }, []);
 
