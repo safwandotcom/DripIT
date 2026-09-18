@@ -341,6 +341,13 @@ export default function App() {
   const [view, setView] = useState('dashboard');
   const [currentCompany, setCurrentCompany] = useState('drip_ittt');
   const [loaded, setLoaded] = useState(false);
+  // Gates the persist effects below: starts false so neither the instant
+  // local-cache paint nor the server-reconcile step (both of which SET
+  // state to data we just loaded, never something a user changed) can
+  // trigger an auto-push back to the server. Only flips true once the
+  // reconcile attempt finishes — see the load effect's `finally` block.
+  // A ref, not state, so flipping it doesn't itself cause a re-render.
+  const initialSyncDoneRef = useRef(false);
 
   // Data state
   const [orders, setOrders] = useState([]);
@@ -419,19 +426,26 @@ export default function App() {
         }
       } catch (err) {
         console.warn('Could not reach the server — showing locally cached data', err);
+      } finally {
+        // Only now is it safe to let the persist effects push state to the
+        // server — everything set before this point was just LOADED (from
+        // cache or from the server), never something a user changed.
+        initialSyncDoneRef.current = true;
       }
     })();
   }, []);
 
-  // Persist
-  useEffect(() => { if (loaded) storage.save('po_orders', orders); }, [orders, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_expenses', expenses); }, [expenses, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_ledger', ledger); }, [ledger, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_loans', loans); }, [loans, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_accounts', accounts); }, [accounts, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_invoices', invoices); }, [invoices, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_current_company', currentCompany); }, [currentCompany, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_settings', settings); }, [settings, loaded]);
+  // Persist — gated on initialSyncDoneRef (see the load effect above) so
+  // the initial load/reconcile sequence itself never triggers a save; only
+  // a real change after that point does.
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_orders', orders); }, [orders, loaded]);
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_expenses', expenses); }, [expenses, loaded]);
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_ledger', ledger); }, [ledger, loaded]);
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_loans', loans); }, [loans, loaded]);
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_accounts', accounts); }, [accounts, loaded]);
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_invoices', invoices); }, [invoices, loaded]);
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_current_company', currentCompany); }, [currentCompany, loaded]);
+  useEffect(() => { if (loaded && initialSyncDoneRef.current) storage.save('po_settings', settings); }, [settings, loaded]);
 
   // Prevent scroll wheel from changing number input values globally
   useEffect(() => {
