@@ -208,6 +208,10 @@ We've placed your order in Malaysia and will update you at every step.
 — ${company.displayName}`,
   reachedBD: (o, company) => {
     const c = calcOrder(o);
+    // Trust orders (skipAdvance) never collected an advance — the full
+    // selling price is due on delivery, not selling-minus-the-usual-40%.
+    const dueNow = o.skipAdvance ? c.selling : c.due;
+    const dueNowBkash = o.skipAdvance ? c.selling * (1 + BKASH_FEE_PERCENT) : c.dueBkash;
     return `Exciting update, ${o.customerName}! 🛬
 
 Your order has arrived in Bangladesh and is ready for delivery.
@@ -217,19 +221,19 @@ Your order has arrived in Bangladesh and is ready for delivery.
 ━━━━━━━━━━━━━━━━━━━━
 Order Number: ${o.orderNumber}
 Item: ${o.productName}
-Pending Due: ${fmtBDT(c.due)}
+Pending Due: ${fmtBDT(dueNow)}
 
 ━━━━━━━━━━━━━━━━━━━━
 💰 HOW WOULD YOU LIKE TO PAY?
 ━━━━━━━━━━━━━━━━━━━━
 
-1️⃣ Cash on Delivery (COD): ${fmtBDT(c.due)}
+1️⃣ Cash on Delivery (COD): ${fmtBDT(dueNow)}
 
-2️⃣ bKash (Send Money): ${fmtBDT(c.dueBkash)}
+2️⃣ bKash (Send Money): ${fmtBDT(dueNowBkash)}
    Number: ${BANK.bkash}
    (Includes 2% bKash charge)
 
-3️⃣ Bank Transfer: ${fmtBDT(c.due)}
+3️⃣ Bank Transfer: ${fmtBDT(dueNow)}
    A/C: ${BANK.accountNumber}
    ${BANK.bankName}, ${BANK.branch}
    ${BANK.accountHolder}
@@ -977,8 +981,10 @@ export default function App() {
     const realRate = parseFloat(settings.realExchangeRate) || 32;
     const delivered = cOrders.filter(o => o.status === 'delivered');
     const totalRevenue = delivered.reduce((s, o) => s + calcOrder(o).selling, 0);
-    const advanceReceived = cOrders.filter(o => o.advancePaid && !o.delivered).reduce((s, o) => s + calcOrder(o).advance, 0);
-    const pendingDues = cOrders.filter(o => o.reachedBD && !o.delivered).reduce((s, o) => s + calcOrder(o).due, 0);
+    // Trust orders (skipAdvance) never actually collect an advance — exclude them
+    // from "received" and count their full selling price as still pending.
+    const advanceReceived = cOrders.filter(o => o.advancePaid && !o.skipAdvance && !o.delivered).reduce((s, o) => s + calcOrder(o).advance, 0);
+    const pendingDues = cOrders.filter(o => o.reachedBD && !o.delivered).reduce((s, o) => s + (o.skipAdvance ? calcOrder(o).selling : calcOrder(o).due), 0);
     const totalOrders = cOrders.length;
     const activeOrders = cOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length;
 
@@ -2519,9 +2525,13 @@ function OrderModal({ order, company, accounts, onClose, onUpdate, onDelete, onC
                   <PriceStat label="Cost" value={fmtRM(c.cost)} />
                   <PriceStat label="Selling" value={fmtBDT(c.selling)} highlight />
                   <PriceStat label="Multiplier" value={`× ${c.multiplier}`} sub={c.multiplier === COST_MULTIPLIER ? 'default' : 'custom for this order'} />
-                  <PriceStat label="Advance (40%)" value={fmtBDT(c.advance)} sub={`bKash: ${fmtBDT(c.advanceBkash)}`} />
-                  <PriceStat label="Due on Delivery" value={fmtBDT(c.due)} sub={`bKash: ${fmtBDT(c.dueBkash)}`} />
-                  <PriceStat label="Received" value={fmtBDT(order.advancePaid ? (order.delivered ? c.selling : c.advance) : 0)} />
+                  {order.skipAdvance ? (
+                    <PriceStat label="Advance" value="Not required" sub="trust order · no advance" />
+                  ) : (
+                    <PriceStat label="Advance (40%)" value={fmtBDT(c.advance)} sub={`bKash: ${fmtBDT(c.advanceBkash)}`} />
+                  )}
+                  <PriceStat label="Due on Delivery" value={fmtBDT(order.skipAdvance ? c.selling : c.due)} sub={`bKash: ${fmtBDT(order.skipAdvance ? c.selling * (1 + BKASH_FEE_PERCENT) : c.dueBkash)}`} />
+                  <PriceStat label="Received" value={fmtBDT(order.delivered ? c.selling : (order.advancePaid && !order.skipAdvance ? c.advance : 0))} />
                 </div>
               </div>
             </>
@@ -2854,7 +2864,9 @@ function BooksOverview({ accounts, ledger, loans, orders, onOpenOrder }) {
     .filter(o => o.advancePaid && !o.delivered)
     .map(o => {
       const c = calcOrder(o);
-      return { ...o, dueAmount: c.due };
+      // Trust orders never actually collected an advance — the full selling
+      // price is still owed, not selling-minus-the-usual-40%.
+      return { ...o, dueAmount: o.skipAdvance ? c.selling : c.due };
     });
   const totalCustomerDues = customerDues.reduce((s, o) => s + o.dueAmount, 0);
 
@@ -3163,8 +3175,10 @@ function OrderPaymentModal({ prompt, accounts, onCancel, onConfirm }) {
 
   const isAdvance = kind === 'order_advance';
   const c = calcOrder(order);
-  const expectedAmount = isAdvance ? c.advance : c.due;
-  const bkashAmount = isAdvance ? c.advanceBkash : c.dueBkash;
+  // Trust orders (skipAdvance) never collected an advance — the final
+  // payment owed is the full selling price, not selling-minus-the-usual-40%.
+  const expectedAmount = isAdvance ? c.advance : (order.skipAdvance ? c.selling : c.due);
+  const bkashAmount = isAdvance ? c.advanceBkash : (order.skipAdvance ? c.selling * (1 + BKASH_FEE_PERCENT) : c.dueBkash);
 
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [splits, setSplits] = useState([
