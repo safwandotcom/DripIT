@@ -277,7 +277,6 @@ const KEY_TO_ENTITY = {
   po_loans: 'loans',
   po_accounts: 'accounts',
   po_invoices: 'invoices',
-  po_counters: 'counters',
   po_settings: '__local__',        // settings stay on this device only
   po_current_company: '__local__'  // company toggle stays on this device only
 };
@@ -350,12 +349,6 @@ export default function App() {
   const [loans, setLoans] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [invoices, setInvoices] = useState([]);
-  const [counters, setCounters] = useState({});
-  // Mirrors `counters` but updates synchronously — `addOrder`/`addInvoice` read+write
-  // this ref directly so two calls in the same tick (rapid clicks) can never reserve
-  // the same order/invoice number, which React state (async/batched) can't guarantee.
-  const countersRef = useRef({});
-  useEffect(() => { countersRef.current = counters; }, [counters]);
 
   // UI state
   const [toast, setToast] = useState(null);
@@ -437,7 +430,6 @@ export default function App() {
   useEffect(() => { if (loaded) storage.save('po_loans', loans); }, [loans, loaded]);
   useEffect(() => { if (loaded) storage.save('po_accounts', accounts); }, [accounts, loaded]);
   useEffect(() => { if (loaded) storage.save('po_invoices', invoices); }, [invoices, loaded]);
-  useEffect(() => { if (loaded) storage.save('po_counters', counters); }, [counters, loaded]);
   useEffect(() => { if (loaded) storage.save('po_current_company', currentCompany); }, [currentCompany, loaded]);
   useEffect(() => { if (loaded) storage.save('po_settings', settings); }, [settings, loaded]);
 
@@ -475,40 +467,25 @@ export default function App() {
   const cAccounts = useMemo(() => accounts.filter(a => a.company === currentCompany), [accounts, currentCompany]);
   const cInvoices = useMemo(() => invoices.filter(i => i.company === currentCompany), [invoices, currentCompany]);
 
-  // Compute the next safe number for orders/invoices by scanning what already exists.
-  // This avoids stale-state bugs when nextCounter is called twice in one render.
-  const computeNextNumber = (type, companyOrders, companyInvoices, savedCounters) => {
-    const items = type === 'order' ? companyOrders : companyInvoices;
-    const prefix = type === 'order'
-      ? (currentCompany === 'NOVUS' ? 'NV-' : 'DI-')
-      : (currentCompany === 'NOVUS' ? 'NV-INV-' : 'DI-INV-');
-    let maxFromData = 0;
-    items.forEach(it => {
-      const num = type === 'order' ? it.orderNumber : it.invoiceNumber;
-      if (num && num.startsWith(prefix)) {
-        const n = parseInt(num.slice(prefix.length), 10);
-        if (!isNaN(n) && n > maxFromData) maxFromData = n;
-      }
-    });
-    const savedCounter = (savedCounters[currentCompany] || {})[type] || 1;
-    return Math.max(maxFromData + 1, savedCounter);
-  };
-
   // === ORDER OPS ===
-  const addOrder = (data) => {
-    // Read + reserve from the ref (synchronous) so a second call in the same tick
-    // never computes the same number — see countersRef comment above.
-    const orderN = computeNextNumber('order', cOrders, cInvoices, countersRef.current);
-    const invoiceN = computeNextNumber('invoice', cOrders, cInvoices, countersRef.current);
+  const addOrder = async (data) => {
+    // Server-assigned, atomically incremented — two devices creating an
+    // order at the same moment cannot receive the same number, unlike a
+    // client-computed "max existing + 1".
+    const [orderN, invoiceN] = await Promise.all([
+      fetch('/api/next-number', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company: currentCompany, type: 'order' })
+      }).then(r => r.json()).then(r => r.number),
+      fetch('/api/next-number', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company: currentCompany, type: 'invoice' })
+      }).then(r => r.json()).then(r => r.number),
+    ]);
     const orderPrefix = currentCompany === 'NOVUS' ? 'NV' : 'DI';
     const invPrefix = currentCompany === 'NOVUS' ? 'NV-INV' : 'DI-INV';
     const orderNumber = `${orderPrefix}-${String(orderN).padStart(4, '0')}`;
     const invoiceNumber = `${invPrefix}-${String(invoiceN).padStart(4, '0')}`;
-
-    // Reserve both numbers immediately (ref, not state) and bump both counters
-    const curCounters = countersRef.current[currentCompany] || { order: 1, invoice: 1 };
-    countersRef.current = { ...countersRef.current, [currentCompany]: { ...curCounters, order: orderN + 1, invoice: invoiceN + 1 } };
-    setCounters(countersRef.current);
 
     const newOrder = {
       id: uid(), company: currentCompany, orderNumber, ...data,
@@ -923,13 +900,13 @@ export default function App() {
   };
 
   // === INVOICE OPS ===
-  const addInvoice = (data) => {
-    const n = computeNextNumber('invoice', cOrders, cInvoices, countersRef.current);
+  const addInvoice = async (data) => {
+    const n = await fetch('/api/next-number', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: currentCompany, type: 'invoice' })
+    }).then(r => r.json()).then(r => r.number);
     const prefix = currentCompany === 'NOVUS' ? 'NV-INV' : 'DI-INV';
     const invoiceNumber = `${prefix}-${String(n).padStart(4, '0')}`;
-    const curCounters = countersRef.current[currentCompany] || { order: 1, invoice: 1 };
-    countersRef.current = { ...countersRef.current, [currentCompany]: { ...curCounters, invoice: n + 1 } };
-    setCounters(countersRef.current);
     const inv = { id: uid(), company: currentCompany, invoiceNumber, ...data };
     setInvoices([inv, ...invoices]);
     showToast(`Invoice ${invoiceNumber} created`);
