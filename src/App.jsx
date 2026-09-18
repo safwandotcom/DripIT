@@ -2374,6 +2374,14 @@ function OrderModal({ order, company, accounts, onClose, onUpdate, onDelete, onC
   const c = calcOrder(order);
   const s = STATUS[order.status];
 
+  // Real profit uses the COGS ledger entry's locked exchange rate (set at
+  // order creation) so it matches Books & Ledger exactly and never drifts
+  // if the real exchange rate setting changes later.
+  const cogsEntry = (ledger || []).find(l => l.relatedOrderId === order.id && l.kind === 'cogs');
+  const cogsBDT = cogsEntry ? (parseFloat(cogsEntry.amount) || 0) * (parseFloat(cogsEntry.lockedRate) || 32) : 0;
+  const profit = c.selling - cogsBDT;
+  const margin = c.selling > 0 ? (profit / c.selling) * 100 : 0;
+
   // Find the auto-generated invoice for this order
   const linkedInvoice = (invoices || []).find(inv => inv.relatedOrderId === order.id);
 
@@ -2524,6 +2532,7 @@ function OrderModal({ order, company, accounts, onClose, onUpdate, onDelete, onC
                 <div className="field-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
                   <PriceStat label="Cost" value={fmtRM(c.cost)} />
                   <PriceStat label="Selling" value={fmtBDT(c.selling)} highlight />
+                  <PriceStat label="Profit" value={fmtBDT(profit)} color={profit >= 0 ? T.success : T.terracotta} sub={c.selling > 0 ? `${margin.toFixed(1)}% margin` : undefined} />
                   <PriceStat label="Multiplier" value={`× ${c.multiplier}`} sub={c.multiplier === COST_MULTIPLIER ? 'default' : 'custom for this order'} />
                   {order.skipAdvance ? (
                     <PriceStat label="Advance" value="Not required" sub="trust order · no advance" />
@@ -2643,11 +2652,11 @@ function InfoBlock({ icon: Icon, label, value, colSpan }) {
   );
 }
 
-function PriceStat({ label, value, sub, highlight }) {
+function PriceStat({ label, value, sub, highlight, color }) {
   return (
     <div>
       <div style={{ fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, marginBottom: 3 }}>{label}</div>
-      <div style={{ fontFamily: T.serif, fontSize: highlight ? 21 : 17, fontWeight: 500, color: highlight ? T.terracotta : T.ink, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      <div style={{ fontFamily: T.serif, fontSize: highlight ? 21 : 17, fontWeight: 500, color: color || (highlight ? T.terracotta : T.ink), fontVariantNumeric: 'tabular-nums' }}>{value}</div>
       {sub && <div style={{ fontSize: 10.5, color: T.muted, marginTop: 2 }}>{sub}</div>}
     </div>
   );
